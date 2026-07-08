@@ -8,13 +8,18 @@ from pathlib import Path
 
 import numpy as np
 
-from turntable_render import wall_azimuth_grid
+from turntable_render import (
+    bank_az_to_unity_plane,
+    unity_plane_to_bank_az,
+    wall_azimuth_grid,
+)
 
 
 def load_view_plane_angles(
     dataset_dir: Path,
     *,
     gazing_only: bool = True,
+    as_bank_az: bool = True,
 ) -> list[float]:
     csv_path = Path(dataset_dir) / "poses" / "gaze_views.csv"
     if not csv_path.exists():
@@ -29,7 +34,7 @@ def load_view_plane_angles(
                 continue
             vp = float(row.get("view_plane_deg", float("nan")))
             if np.isfinite(vp):
-                angles.append(vp)
+                angles.append(unity_plane_to_bank_az(vp) if as_bank_az else vp)
     return angles
 
 
@@ -56,45 +61,50 @@ def azimuths_from_gaze_dataset(
     dataset_dir: Path,
     *,
     bin_deg: float | None = None,
-    max_deg: float = 180.0,
+    half_span_deg: float = 90.0,
     gazing_only: bool = True,
-    fill_to_max: bool = True,
+    fill_span: bool = True,
 ) -> tuple[list[float], dict]:
-    """Unity view_plane_deg ile hizali view bank acilari (0..max_deg).
+    """View bank acilari: -half_span .. +half_span (0 = duz yuz, Y ekseni).
 
-    - Unity'de gorulen acilar (bin'lenmis) her zaman dahil
-    - fill_to_max=True: 0..max_deg arasi ayni adimla grid (bos acilar da render)
+    Unity view_plane_deg (0..180) -> bank az (-90..+90) via -90 offset.
     """
-    angles = load_view_plane_angles(dataset_dir, gazing_only=gazing_only)
-    if not angles:
-        step = int(bin_deg or 10)
-        fallback = wall_azimuth_grid(step, int(max_deg))
+    bank_angles = load_view_plane_angles(dataset_dir, gazing_only=gazing_only, as_bank_az=True)
+    span = min(90.0, float(half_span_deg))
+    if not bank_angles:
+        step = int(bin_deg or 5)
+        fallback = wall_azimuth_grid(step, int(span))
         return fallback, {"source": "fallback_grid", "reason": "no_gaze_angles"}
 
-    step = float(bin_deg if bin_deg is not None else suggest_bin_deg(angles))
+    step = float(bin_deg if bin_deg is not None else suggest_bin_deg(bank_angles))
     b = max(1, int(round(step)))
 
-    unity_bins = sorted({float(int(round(a / b) * b)) for a in angles})
-    lo = float(min(angles))
-    hi_obs = float(max(angles))
+    unity_bins = sorted({float(int(round(a / b) * b)) for a in bank_angles})
+    lo = float(min(bank_angles))
+    hi_obs = float(max(bank_angles))
 
-    if fill_to_max:
-        upper = int(max_deg)
-        grid = [float(x) for x in range(0, upper + 1, b)]
+    if fill_span:
+        upper = int(span)
+        grid = [float(x) for x in range(-upper, upper + 1, b)]
         merged = sorted(set(grid) | set(unity_bins))
     else:
-        upper = int(np.ceil(hi_obs / b) * b)
-        merged = [float(x) for x in range(0, upper + 1, b)]
+        lo_b = int(np.floor(lo / b) * b)
+        hi_b = int(np.ceil(hi_obs / b) * b)
+        merged = [float(x) for x in range(lo_b, hi_b + 1, b)]
 
     meta = {
         "source": "unity_gaze_views",
         "dataset_dir": str(Path(dataset_dir).resolve()),
         "gazing_only": gazing_only,
         "bin_deg": b,
-        "max_deg": float(max_deg),
-        "fill_to_max": fill_to_max,
-        "unity_view_plane_min_deg": lo,
-        "unity_view_plane_max_deg": hi_obs,
+        "half_span_deg": span,
+        "fill_span": fill_span,
+        "convention": "bank_az: 0=frontal +Z, Y-axis, -90..+90",
+        "unity_offset_deg": 90.0,
+        "bank_az_min_deg": lo,
+        "bank_az_max_deg": hi_obs,
+        "unity_plane_min_deg": bank_az_to_unity_plane(lo),
+        "unity_plane_max_deg": bank_az_to_unity_plane(hi_obs),
         "unity_unique_bins": len(unity_bins),
         "view_bank_count": len(merged),
         "view_bank_azimuths_deg": merged,

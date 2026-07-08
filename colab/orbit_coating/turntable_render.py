@@ -15,22 +15,43 @@ WALL_TANGENT_UP = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 MUCOSA_RGB = np.array([188, 108, 118], dtype=np.uint8)
 
 
-def wall_azimuth_grid(step_deg: int = 10, max_deg: int = 180) -> list[float]:
-    """Duvar orbit acilari 0..max_deg (180° yarım yay, Y ekseni)."""
+# Unity view_plane_deg (0..180 orbit span) -> bank azimuth (-90..+90, 0=frontal +Z)
+UNITY_VIEW_PLANE_OFFSET_DEG = 90.0
+
+
+def unity_plane_to_bank_az(unity_plane_deg: float) -> float:
+    """Unity gaze view_plane 0..180 -> bank -90..+90 (0 = duz yuz bize bakan)."""
+    return float(unity_plane_deg) - UNITY_VIEW_PLANE_OFFSET_DEG
+
+
+def bank_az_to_unity_plane(bank_az_deg: float) -> float:
+    return float(bank_az_deg) + UNITY_VIEW_PLANE_OFFSET_DEG
+
+
+def wall_azimuth_grid(step_deg: int = 5, half_span_deg: int = 90) -> list[float]:
+    """Dikey (Y) eksen etrafinda -half_span .. +half_span; 0 = on (+Z, duz yuz)."""
     step = max(1, int(step_deg))
-    cap = min(180, max(step, int(max_deg)))
-    return [float(a) for a in range(0, cap + 1, step)]
+    span = min(90, max(step, int(half_span_deg)))
+    return [float(a) for a in range(-span, span + 1, step)]
 
 
-def preview_azimuth_grid(step_deg: int = 15, max_deg: int = 180) -> list[float]:
-    """Onizleme: 0 .. 180 (duvar yarım yayı)."""
-    return wall_azimuth_grid(step_deg, min(180, max_deg))
+def preview_azimuth_grid(step_deg: int = 15, half_span_deg: int = 90) -> list[float]:
+    """Onizleme: -90 .. +90."""
+    return wall_azimuth_grid(step_deg, half_span_deg)
 
 
-DEFAULT_WALL_AZIMUTH_STEP_DEG = 10
-DEFAULT_WALL_AZIMUTH_MAX_DEG = 180
+def azimuth_view_filename(azimuth_deg: float) -> str:
+    """Signed azimuth -> view_azm045.png / view_azp000.png."""
+    n = int(round(float(azimuth_deg)))
+    if n < 0:
+        return f"view_azm{abs(n):03d}.png"
+    return f"view_azp{n:03d}.png"
+
+
+DEFAULT_WALL_AZIMUTH_STEP_DEG = 5
+DEFAULT_WALL_AZIMUTH_HALF_SPAN_DEG = 90
 DEFAULT_WALL_AZIMUTHS_DEG = wall_azimuth_grid(
-    DEFAULT_WALL_AZIMUTH_STEP_DEG, DEFAULT_WALL_AZIMUTH_MAX_DEG
+    DEFAULT_WALL_AZIMUTH_STEP_DEG, DEFAULT_WALL_AZIMUTH_HALF_SPAN_DEG
 )
 
 
@@ -112,9 +133,9 @@ def wall_orbit_camera(
     """Mukoza duvarina yapisik polyp kamerasi.
 
     orbit_mode:
-      - ``lumen`` (varsayilan): duvara yapisik, **Y ekseni** etrafinda 0..180° yarim yay
-        (XZ duzleminde: 0=yan +X, 90=on +Z lumen, 180=yan -X). Tek eksen, arka yok.
-      - ``full``: tam 360° (onizleme / debug).
+      - ``lumen`` (varsayilan): **Y ekseni** (dikey), -90..+90°.
+        0 = duz yuz bize bakan (+Z lumen), -90 = sol yan, +90 = sag yan.
+      - ``full``: tam 360° (debug).
     """
     target = np.zeros(3, dtype=np.float64) if target is None else np.asarray(target, dtype=np.float64)
     obl = np.radians(obliquity_deg)
@@ -130,13 +151,13 @@ def wall_orbit_camera(
             dtype=np.float64,
         )
     else:
-        # Y-axis wall arc — matches Unity view_plane_deg (0..180)
-        az = np.radians(float(np.clip(azimuth_deg, 0.0, 180.0)))
+        # Y-axis only: X-Z arc, az=0 -> +Z (frontal)
+        az = np.radians(float(np.clip(azimuth_deg, -90.0, 90.0)))
         direction = np.array(
             [
-                np.cos(az) * np.sin(obl),
+                np.sin(az) * np.sin(obl),
                 0.0,
-                np.sin(az) * np.sin(obl) + np.cos(obl),
+                np.cos(az) * np.sin(obl) + np.cos(obl),
             ],
             dtype=np.float64,
         )
@@ -495,7 +516,7 @@ def render_turntable_views(
             wall_radius=radius * 2.4,
             include_mucosa=include_mucosa,
         )
-        name = f"view_az{int(round(az)):03d}.png"
+        name = azimuth_view_filename(az)
         cv2.imwrite(str(out_dir / name), cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA))
 
         entries.append(
@@ -581,7 +602,7 @@ def build_view_strip(
 
         label_h = 36
         band = np.full((label_h, thumb_w, 3), bg_rgb, dtype=np.uint8)
-        text = f"{int(round(entry['azimuth_deg']))}\u00b0"
+        text = f"{int(round(entry['azimuth_deg'])):+d}\u00b0"
         cv2.putText(
             band,
             text,

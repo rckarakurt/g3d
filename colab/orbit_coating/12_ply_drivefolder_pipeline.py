@@ -20,8 +20,8 @@ PROMPT = (
     "smooth organic surface, realistic endoscopic texture, clinical photography"
 )
 
-AZIMUTH_BIN_DEG = 5          # Unity view_plane ile ayni bin (None = otomatik)
-AZIMUTH_MAX_DEG = 180        # 0..180 duvar yarım yayı (Y ekseni)
+AZIMUTH_BIN_DEG = 5          # bank aci adimi (None = otomatik)
+AZIMUTH_HALF_SPAN_DEG = 90   # -90 .. +90 (0 = duz yuz, Y ekseni)
 SYNC_AZIMUTHS_FROM_UNITY = True
 # Oncelik: /content/medical_gan_dataset (Bolum 5b); yoksa Drive fallback
 UNITY_DATASET = Path("/content/medical_gan_dataset")
@@ -164,19 +164,22 @@ if SYNC_AZIMUTHS_FROM_UNITY and unity_dataset.exists() and (unity_dataset / "rgb
     AZIMUTHS_DEG, angle_meta = azimuths_from_gaze_dataset(
         unity_dataset,
         bin_deg=AZIMUTH_BIN_DEG,
-        max_deg=AZIMUTH_MAX_DEG,
-        fill_to_max=True,
+        half_span_deg=AZIMUTH_HALF_SPAN_DEG,
+        fill_span=True,
     )
     save_angle_meta(angle_meta, view_dir / "unity_angle_sync.json")
     print(
         f"Unity aci senkron: {len(AZIMUTHS_DEG)} gorunum, "
-        f"Unity span {angle_meta['unity_view_plane_min_deg']:.1f}.."
-        f"{angle_meta['unity_view_plane_max_deg']:.1f}°, bin={angle_meta['bin_deg']}°"
+        f"bank span {angle_meta['bank_az_min_deg']:.1f}.."
+        f"{angle_meta['bank_az_max_deg']:.1f}° (0=duz yuz), bin={angle_meta['bin_deg']}°"
     )
 else:
-    step = int(AZIMUTH_BIN_DEG or 10)
-    AZIMUTHS_DEG = wall_azimuth_grid(step, int(AZIMUTH_MAX_DEG))
-    print(f"Unity dataset yok — sabit grid 0..{AZIMUTH_MAX_DEG} step={step}° ({len(AZIMUTHS_DEG)} gorunum)")
+    step = int(AZIMUTH_BIN_DEG or 5)
+    AZIMUTHS_DEG = wall_azimuth_grid(step, int(AZIMUTH_HALF_SPAN_DEG))
+    print(
+        f"Unity dataset yok — sabit grid -{AZIMUTH_HALF_SPAN_DEG}..+{AZIMUTH_HALF_SPAN_DEG} "
+        f"step={step}° ({len(AZIMUTHS_DEG)} gorunum)"
+    )
 
 print(f"4/4 Duvar-yapisik render ({len(AZIMUTHS_DEG)} aci): ilk/son = {AZIMUTHS_DEG[0]:.0f}..{AZIMUTHS_DEG[-1]:.0f}")
 manifest = render_turntable_views(
@@ -191,7 +194,7 @@ manifest = render_turntable_views(
     elevation_deg=OBLIQUITY_DEG,
     distance_scale=2.8,
     wall_mounted=WALL_MOUNTED,
-    orbit_mode="lumen",  # Y ekseni 0..180 duvar yarım yayı (Unity view_plane_deg)
+    orbit_mode="lumen",  # Y ekseni -90..+90, 0=duz yuz (+Z)
 )
 print("   ->", view_dir)
 for entry in manifest["views"]:
@@ -206,7 +209,7 @@ meta = {
     "atlas_tex_size": ATLAS_TEX_SIZE,
     "azimuths_deg": AZIMUTHS_DEG,
     "azimuth_bin_deg": AZIMUTH_BIN_DEG,
-    "azimuth_max_deg": AZIMUTH_MAX_DEG,
+    "azimuth_half_span_deg": AZIMUTH_HALF_SPAN_DEG,
     "sync_azimuths_from_unity": SYNC_AZIMUTHS_FROM_UNITY,
     "unity_dataset": str(unity_dataset),
     "obliquity_deg": OBLIQUITY_DEG,

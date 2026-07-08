@@ -10,9 +10,9 @@ import numpy as np
 OUT_ROOT = Path("/content/ply_styleshot_out")
 PREVIEW_DIR = OUT_ROOT / "view_preview_full360"
 
-PREVIEW_STEP_DEG = 15       # 0, 15, 30, ... 180
-PREVIEW_MAX_DEG = 180       # duvar yarım yayı (Y ekseni, 0..180)
-ORBIT_MODE = "lumen"        # lumen = duvara yapisik tek eksen | full = 360 debug
+PREVIEW_STEP_DEG = 15
+PREVIEW_HALF_SPAN_DEG = 90   # -90 .. +90
+ORBIT_MODE = "lumen"
 
 PREVIEW_RENDER_SIZE = 512
 PREVIEW_THUMB_HEIGHT = 180
@@ -57,9 +57,9 @@ faces = pack["faces"]
 uvs = pack["uvs"]
 texture = cv2.cvtColor(cv2.imread(str(tex_path)), cv2.COLOR_BGR2RGB)
 
-azimuths = preview_azimuth_grid(PREVIEW_STEP_DEG, PREVIEW_MAX_DEG)
+azimuths = preview_azimuth_grid(PREVIEW_STEP_DEG, PREVIEW_HALF_SPAN_DEG)
 print(f"Onizleme: {ORBIT_MODE} orbit, {len(azimuths)} aci ({azimuths[0]:.0f}..{azimuths[-1]:.0f})")
-print("  0=yan +X, 90=on (+Z lumen), 180=yan -X  (duvara yapisik Y ekseni)")
+print("  0=duz yuz (+Z), -90=sol yan, +90=sag yan  (Y ekseni, duvara yapisik)")
 
 manifest = render_turntable_views(
     verts,

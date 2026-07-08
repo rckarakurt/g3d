@@ -35,6 +35,7 @@ ORBIT = _resolve_orbit_scripts()
 sys.path.insert(0, str(ORBIT))
 
 from coating_utils import export_trajectory_mp4, lab_color_match_polyp  # noqa: E402
+from turntable_render import unity_plane_to_bank_az  # noqa: E402
 
 
 def load_rgba(path: Path) -> np.ndarray:
@@ -457,7 +458,8 @@ def composite_dataset(
             continue
 
         unity_rgb = cv2.cvtColor(cv2.imread(str(rgb_path)), cv2.COLOR_BGR2RGB)
-        view_plane = float(row.get("view_plane_deg", float("nan")))
+        view_plane_raw = float(row.get("view_plane_deg", float("nan")))
+        view_plane = unity_plane_to_bank_az(view_plane_raw)
 
         distance_m = float(row.get("distance_m", float("nan")))
         if global_scale and np.isfinite(global_distance_m):
