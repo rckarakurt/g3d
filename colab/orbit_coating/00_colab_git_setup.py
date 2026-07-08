@@ -12,21 +12,54 @@ REPO_DIR = Path("/content/g3d")
 # ================================
 
 
-def _run(cmd: list[str]) -> None:
+def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     print("$", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    if result.stdout:
+        print(result.stdout.rstrip())
+    if result.stderr:
+        print(result.stderr.rstrip())
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, result.stdout, result.stderr
+        )
+    return result
+
+
+def _clone() -> None:
+    if REPO_DIR.exists():
+        shutil.rmtree(REPO_DIR)
+    _run(
+        [
+            "git",
+            "clone",
+            "-b",
+            REPO_BRANCH,
+            "--depth",
+            "1",
+            REPO_URL,
+            str(REPO_DIR),
+        ]
+    )
+    print("Repo klonlandi:", REPO_DIR)
+
+
+def _update() -> None:
+    """Shallow clone icin pull yerine fetch + reset (--ff-only Colab'da sik kirilir)."""
+    try:
+        _run(["git", "-C", str(REPO_DIR), "fetch", "origin", REPO_BRANCH, "--depth", "1"])
+        _run(["git", "-C", str(REPO_DIR), "checkout", "-f", REPO_BRANCH])
+        _run(["git", "-C", str(REPO_DIR), "reset", "--hard", f"origin/{REPO_BRANCH}"])
+        print("Repo guncellendi:", REPO_DIR)
+    except subprocess.CalledProcessError:
+        print("fetch/reset basarisiz — yeniden klonlaniyor...")
+        _clone()
 
 
 if REPO_DIR.exists() and (REPO_DIR / ".git").is_dir():
-    _run(["git", "-C", str(REPO_DIR), "fetch", "--depth", "1", "origin", REPO_BRANCH])
-    _run(["git", "-C", str(REPO_DIR), "checkout", REPO_BRANCH])
-    _run(["git", "-C", str(REPO_DIR), "pull", "--ff-only", "origin", REPO_BRANCH])
-    print("Repo guncellendi:", REPO_DIR)
+    _update()
 else:
-    if REPO_DIR.exists():
-        shutil.rmtree(REPO_DIR)
-    _run(["git", "clone", "-b", REPO_BRANCH, "--depth", "1", REPO_URL, str(REPO_DIR)])
-    print("Repo klonlandi:", REPO_DIR)
+    _clone()
 
 os.environ["VRCAPS_REPO"] = str(REPO_DIR)
 sys.path.insert(0, str(REPO_DIR))
