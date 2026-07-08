@@ -1,19 +1,24 @@
-## 0. GitHub clone (script gomme yerine)
+## 0. GitHub clone + temiz baslangic
 
-Kod degisikliklerini GitHub'da yapin; Colab her oturumda repoyu klonlar.
+**Repo:** https://github.com/rckarakurt/g3d
 
-### Yerel (PC)
+### Sifirdan Colab
 
-```bash
-cd D:\vr-caps\VirtualCapsuleEndoscopy
-git init
-git add .
-git commit -m "VRCaps Colab pipeline"
-git remote add origin https://github.com/rckarakurt/g3d.git
-git push -u origin main
-```
+1. **Runtime → Restart session**
+2. **Bolum 0** calistir (`CLEAN_OLD_OUTPUTS = True` varsayilan)
+3. Sirayla: **1 → 1b → 2 → 5b → 3 → 4 → 6 → 7**
 
-### Colab
+### Aci konvansiyonu (view bank)
 
-1. **Bolum 0** calistirin — repo: `https://github.com/rckarakurt/g3d.git`
-2. Kodu guncellemek icin Bolum 0'i tekrar calistirin (`git pull`)
+| Bank acisi | Gorunum |
+|------------|---------|
+| **0°** | Duz yuz bize bakan (+Z) |
+| **-90°** | Sol yan |
+| **+90°** | Sag yan |
+
+- Sadece **Y ekseni** (dikey), **-90 .. +90**
+- Unity `view_plane_deg` (0..180) otomatik `-90` offset ile eslestirilir
+
+### Kod guncelleme
+
+GitHub push sonrasi Bolum 0 tekrar calistir. Eski notebook kullanma — GitHub'daki `.ipynb` indir.

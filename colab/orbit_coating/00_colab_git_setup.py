@@ -5,10 +5,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
 # ============ AYARLAR ============
 REPO_URL = "https://github.com/rckarakurt/g3d.git"
 REPO_BRANCH = "main"
 REPO_DIR = Path("/content/g3d")
+
+# Sifirdan baslarken True yap — eski view_bank / ciktilari siler
+CLEAN_OLD_OUTPUTS = True
 # ================================
 
 
@@ -75,5 +80,35 @@ if not (orbit / "coating_utils.py").exists():
 
 from colab_content_paths import print_repo_info
 
+if CLEAN_OLD_OUTPUTS:
+    import shutil as _shutil
+
+    for _p in (
+        Path("/content/ply_styleshot_out"),
+        Path("/content/gaze_composite"),
+        Path("/content/medical_gan_dataset"),
+    ):
+        if _p.exists():
+            _shutil.rmtree(_p)
+            print("Silindi:", _p)
+
+_commit = subprocess.run(
+    ["git", "-C", str(REPO_DIR), "log", "-1", "--oneline"],
+    capture_output=True,
+    text=True,
+    check=False,
+)
+if _commit.stdout.strip():
+    print("Git commit:", _commit.stdout.strip())
+
+from turntable_render import wall_azimuth_grid, wall_orbit_camera
+
+print("Aci konvansiyonu: Y ekseni, -90..+90, 0=duz yuz (+Z)")
+print("Ornek grid:", wall_azimuth_grid(45, 90))
+for _az in (-90, 0, 90):
+    _c2w = wall_orbit_camera(_az, obliquity_deg=18.0, distance=1.0, target=np.zeros(3))
+    _eye = _c2w[:3, 3]
+    print(f"  az {_az:+4d} -> eye ({_eye[0]:+.3f}, {_eye[1]:+.3f}, {_eye[2]:+.3f})")
+
 print_repo_info()
-print("\nSonraki adim: Bolum 1 (StyleShot kurulum)")
+print("\nSonraki adim: 1 -> 1b -> 2 -> 5b -> 3 -> 4 -> 6 -> 7")
