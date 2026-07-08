@@ -1,0 +1,9 @@
+﻿# g3d â€” Colab pipeline
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.rar
+*.zip
+*.bin
+**/outputs/
