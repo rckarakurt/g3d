@@ -301,6 +301,9 @@ def resolve_polyp_diameter_mm(bank_manifest: dict, view_bank_dir: Path) -> float
         radius = float(meta.get("mesh_radius_mm", 6.0))
         return radius * 2.0
     return 12.0
+
+
+def load_gaze_rows(dataset_dir: Path) -> list[dict]:
     path = dataset_dir / "poses" / "gaze_views.csv"
     if not path.exists():
         raise FileNotFoundError(f"Missing {path}. Run export_gaze_views.py first.")
