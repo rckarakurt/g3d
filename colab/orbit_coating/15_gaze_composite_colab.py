@@ -33,6 +33,18 @@ from colab_content_paths import install_sys_path
 
 install_sys_path()
 
+# Bolum 0 git pull sonrasi eski modul cache'ini temizle
+for _mod in list(sys.modules):
+    if _mod in ("gaze_composite", "export_gaze_views", "coating_utils"):
+        del sys.modules[_mod]
+
+_gaze_py = Path("/content/g3d/captures/gaze_composite.py")
+if not _gaze_py.exists() or "def load_gaze_rows" not in _gaze_py.read_text(encoding="utf-8"):
+    raise RuntimeError(
+        "Eski gaze_composite.py — once Bolum 0 calistirin (git pull).\n"
+        "Hala olmazsa: !rm -rf /content/g3d  sonra Bolum 0."
+    )
+
 from colab_content_paths import (
     DATASET_DRIVE,
     GAZE_COMPOSITE_DRIVE,
@@ -44,6 +56,10 @@ from colab_content_paths import (
     sync_dataset_from_drive,
 )
 from export_gaze_views import export_gaze_views
+import importlib
+import gaze_composite as _gaze_composite
+
+importlib.reload(_gaze_composite)
 from gaze_composite import build_strip, composite_dataset
 
 
