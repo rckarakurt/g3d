@@ -101,15 +101,16 @@ _commit = subprocess.run(
 if _commit.stdout.strip():
     print("Git commit:", _commit.stdout.strip())
 
-from turntable_render import wall_azimuth_grid, wall_orbit_camera
+from turntable_render import lumen_camera_c2w, rotate_vertices_y, wall_azimuth_grid
 
-print("Aci konvansiyonu: Y ekseni, -90..+90, 0=duz yuz (+Z), ±90=tam yan (±X)")
+print("Turntable: mesh Y ekseninde doner, kamera sabit (+Z, 0=duz yuz)")
 print("Ornek grid:", wall_azimuth_grid(45, 90))
+_t = np.zeros(3)
+_c2w = lumen_camera_c2w(1.0, _t, obliquity_deg=18.0)
+print("Sabit kamera eye:", _c2w[:3, 3])
 for _az in (-90, 0, 90):
-    _c2w = wall_orbit_camera(_az, obliquity_deg=18.0, distance=1.0, target=np.zeros(3))
-    _eye = _c2w[:3, 3]
-    _lat = "YAN +X" if _az == 90 else ("YAN -X" if _az == -90 else "ON +Z")
-    print(f"  az {_az:+4d} ({_lat}) -> eye ({_eye[0]:+.3f}, {_eye[1]:+.3f}, {_eye[2]:+.3f})")
+    _v = rotate_vertices_y(np.array([[0.5, 0, 0.2], [-0.5, 0, 0.2]]), -float(_az), _t)
+    print(f"  az {_az:+4d}: test nokta donduruldu -> {_v[0]}")
 
 print_repo_info()
 print("\nSonraki adim: 1 -> 1b -> 2 -> 5b -> 3 -> 4 -> 6 -> 7")

@@ -67,6 +67,55 @@ def pinhole_intrinsics(
     return np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]], dtype=np.float64)
 
 
+def rotate_vertices_y(
+    vertices: np.ndarray,
+    angle_deg: float,
+    center: np.ndarray,
+) -> np.ndarray:
+    """Y ekseni (dikey) etrafinda dondur — duvara yapisik polyp turntable."""
+    a = np.radians(float(angle_deg))
+    c, s = np.cos(a), np.sin(a)
+    R = np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]], dtype=np.float64)
+    center = np.asarray(center, dtype=np.float64)
+    rel = vertices.astype(np.float64) - center
+    return (rel @ R.T) + center
+
+
+def _camera_c2w_opencv(eye: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Roll-stabil look-at (OpenCV: +X sag, +Y asagi, +Z ileri)."""
+    eye = np.asarray(eye, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    z_fwd = target - eye
+    z_fwd = z_fwd / (np.linalg.norm(z_fwd) + 1e-12)
+    world_up = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    x_right = np.cross(z_fwd, world_up)
+    if np.linalg.norm(x_right) < 1e-8:
+        x_right = np.array([1.0, 0.0, 0.0])
+    else:
+        x_right = x_right / np.linalg.norm(x_right)
+    y_down = np.cross(z_fwd, x_right)
+    y_down = y_down / (np.linalg.norm(y_down) + 1e-12)
+    c2w = np.eye(4, dtype=np.float64)
+    c2w[:3, 0] = x_right
+    c2w[:3, 1] = y_down
+    c2w[:3, 2] = z_fwd
+    c2w[:3, 3] = eye
+    return c2w
+
+
+def lumen_camera_c2w(
+    distance: float,
+    target: np.ndarray,
+    *,
+    obliquity_deg: float = 18.0,
+) -> np.ndarray:
+    """Sabit kamera: +Z lumen (0 derece = duz yuz). Mesh Y ekseninde doner."""
+    t = np.asarray(target, dtype=np.float64)
+    obl = np.radians(float(obliquity_deg))
+    eye = t + distance * np.array([0.0, np.sin(obl), np.cos(obl)], dtype=np.float64)
+    return _camera_c2w_opencv(eye, t)
+
+
 def look_at_c2w(
     eye: np.ndarray,
     target: np.ndarray,
@@ -150,24 +199,16 @@ def wall_orbit_camera(
             ],
             dtype=np.float64,
         )
+        direction = direction / (np.linalg.norm(direction) + 1e-12)
+        eye = target + distance * direction
+        return _camera_c2w_opencv(eye, target)
     else:
-        # Y ekseni: X-Z duvar yayi. az=0 -> +Z (on), az=±90 -> tam yan ±X.
-        # obliquity yalnizca onde (dir_z>0) Y egimi; yan profilde saf ±X kalir.
         az = np.radians(float(np.clip(azimuth_deg, -90.0, 90.0)))
-        dir_x = np.sin(az)
-        dir_z = np.cos(az)
-        direction = np.array(
-            [
-                dir_x,
-                np.sin(obl) * dir_z,
-                dir_z * np.cos(obl),
-            ],
+        eye = target + distance * np.array(
+            [np.sin(az), 0.0, np.cos(az)],
             dtype=np.float64,
         )
-
-    direction = direction / (np.linalg.norm(direction) + 1e-12)
-    eye = target + distance * direction
-    return look_at_c2w(eye, target, up=WALL_TANGENT_UP)
+        return _camera_c2w_opencv(eye, target)
 
 
 def turntable_camera(
@@ -494,19 +535,33 @@ def render_turntable_views(
     target = polyp_gaze_target(verts)
     radius = float(np.linalg.norm(verts, axis=1).max())
     distance = max(radius * distance_scale, 1e-3)
-    k = pinhole_intrinsics(width, height)
-
-    mesh_data = build_textured_mesh(verts, faces, uvs, texture_rgb, simplify=simplify)
+    k = pinhole_intrinsics(width, height, fov_deg=50.0)
     wall_center = np.array([target[0], target[1], 0.0], dtype=np.float64)
+
+    use_mesh_rotate = wall_mounted and orbit_mode == "lumen"
+    c2w_fixed = (
+        lumen_camera_c2w(distance, target, obliquity_deg=elevation_deg)
+        if use_mesh_rotate
+        else None
+    )
 
     entries = []
     for az in azimuths_deg:
-        c2w = wall_orbit_camera(
-            float(az),
-            obliquity_deg=elevation_deg,
-            distance=distance,
-            target=target,
-            orbit_mode=orbit_mode,
+        az_f = float(az)
+        if use_mesh_rotate:
+            verts_az = rotate_vertices_y(verts, -az_f, target)
+            c2w = c2w_fixed
+        else:
+            verts_az = verts
+            c2w = wall_orbit_camera(
+                az_f,
+                obliquity_deg=elevation_deg,
+                distance=distance,
+                target=target,
+                orbit_mode=orbit_mode,
+            )
+        mesh_data = build_textured_mesh(
+            verts_az, faces, uvs, texture_rgb, simplify=simplify
         )
         rgba = render_mesh_rgba_software(
             mesh_data,
@@ -535,6 +590,7 @@ def render_turntable_views(
     manifest = {
         "render_mode": "wall_mounted" if wall_mounted else "turntable",
         "orbit_mode": orbit_mode,
+        "turntable_method": "mesh_rotate_y" if use_mesh_rotate else "orbit_camera",
         "wall_normal": WALL_NORMAL.tolist(),
         "azimuths_deg": [float(a) for a in azimuths_deg],
         "obliquity_deg": float(elevation_deg),

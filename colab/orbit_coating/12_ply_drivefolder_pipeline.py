@@ -29,7 +29,7 @@ UNITY_DATASET = Path("/content/medical_gan_dataset")
 OBLIQUITY_DEG = 18.0  # on gorunumde hafif Y egimi; ±90 yan profilde etkisiz
 RENDER_SIZE = 768
 WALL_MOUNTED = True
-DISTANCE_SCALE = 3.2  # yan profil icin orbit yaricapi (polyp etrafinda daha genis)
+DISTANCE_SCALE = 2.4  # mesh etrafinda donus icin kamera mesafesi
 # ================================
 
 import os
