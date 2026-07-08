@@ -21,7 +21,7 @@ PROMPT = (
 )
 
 AZIMUTH_BIN_DEG = 5          # Unity view_plane ile ayni bin (None = otomatik)
-AZIMUTH_MAX_DEG = 270        # 0..270
+AZIMUTH_MAX_DEG = 180        # 0..180 duvar yarım yayı (Y ekseni)
 SYNC_AZIMUTHS_FROM_UNITY = True
 # Oncelik: /content/medical_gan_dataset (Bolum 5b); yoksa Drive fallback
 UNITY_DATASET = Path("/content/medical_gan_dataset")
@@ -191,7 +191,7 @@ manifest = render_turntable_views(
     elevation_deg=OBLIQUITY_DEG,
     distance_scale=2.8,
     wall_mounted=WALL_MOUNTED,
-    orbit_mode="lumen",  # Unity/endoscopy: kamera lumen (+Z) tarafinda
+    orbit_mode="lumen",  # Y ekseni 0..180 duvar yarım yayı (Unity view_plane_deg)
 )
 print("   ->", view_dir)
 for entry in manifest["views"]:

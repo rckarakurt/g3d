@@ -15,20 +15,20 @@ WALL_TANGENT_UP = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 MUCOSA_RGB = np.array([188, 108, 118], dtype=np.uint8)
 
 
-def wall_azimuth_grid(step_deg: int = 10, max_deg: int = 270) -> list[float]:
-    """Duvar orbit acilari 0..max_deg (dahil), sabit adim — view bank / onizleme."""
+def wall_azimuth_grid(step_deg: int = 10, max_deg: int = 180) -> list[float]:
+    """Duvar orbit acilari 0..max_deg (180° yarım yay, Y ekseni)."""
     step = max(1, int(step_deg))
-    cap = max(step, int(max_deg))
+    cap = min(180, max(step, int(max_deg)))
     return [float(a) for a in range(0, cap + 1, step)]
 
 
-def preview_azimuth_grid(step_deg: int = 15, max_deg: int = 360) -> list[float]:
-    """Yan yana onizleme: 0 .. max_deg (full orbit icin 360 onerilir)."""
-    return wall_azimuth_grid(step_deg, max_deg)
+def preview_azimuth_grid(step_deg: int = 15, max_deg: int = 180) -> list[float]:
+    """Onizleme: 0 .. 180 (duvar yarım yayı)."""
+    return wall_azimuth_grid(step_deg, min(180, max_deg))
 
 
 DEFAULT_WALL_AZIMUTH_STEP_DEG = 10
-DEFAULT_WALL_AZIMUTH_MAX_DEG = 270
+DEFAULT_WALL_AZIMUTH_MAX_DEG = 180
 DEFAULT_WALL_AZIMUTHS_DEG = wall_azimuth_grid(
     DEFAULT_WALL_AZIMUTH_STEP_DEG, DEFAULT_WALL_AZIMUTH_MAX_DEG
 )
@@ -112,14 +112,15 @@ def wall_orbit_camera(
     """Mukoza duvarina yapisik polyp kamerasi.
 
     orbit_mode:
-      - ``lumen`` (varsayilan): kamera her zaman lumen (+Z) tarafinda — Unity / endoscopy.
-      - ``full``: tam 360° halka; 180° arka (duvar tarafi), 270° yan/arka profil.
+      - ``lumen`` (varsayilan): duvara yapisik, **Y ekseni** etrafinda 0..180° yarim yay
+        (XZ duzleminde: 0=yan +X, 90=on +Z lumen, 180=yan -X). Tek eksen, arka yok.
+      - ``full``: tam 360° (onizleme / debug).
     """
     target = np.zeros(3, dtype=np.float64) if target is None else np.asarray(target, dtype=np.float64)
-    az = np.radians(float(azimuth_deg) % 360.0)
     obl = np.radians(obliquity_deg)
 
     if orbit_mode == "full":
+        az = np.radians(float(azimuth_deg) % 360.0)
         direction = np.array(
             [
                 np.sin(obl) * np.cos(az),
@@ -129,11 +130,13 @@ def wall_orbit_camera(
             dtype=np.float64,
         )
     else:
+        # Y-axis wall arc — matches Unity view_plane_deg (0..180)
+        az = np.radians(float(np.clip(azimuth_deg, 0.0, 180.0)))
         direction = np.array(
             [
-                np.sin(obl) * np.cos(az),
-                np.sin(obl) * np.sin(az),
-                np.cos(obl),
+                np.cos(az) * np.sin(obl),
+                0.0,
+                np.sin(az) * np.sin(obl) + np.cos(obl),
             ],
             dtype=np.float64,
         )

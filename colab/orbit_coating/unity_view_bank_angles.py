@@ -56,7 +56,7 @@ def azimuths_from_gaze_dataset(
     dataset_dir: Path,
     *,
     bin_deg: float | None = None,
-    max_deg: float = 270.0,
+    max_deg: float = 180.0,
     gazing_only: bool = True,
     fill_to_max: bool = True,
 ) -> tuple[list[float], dict]:
