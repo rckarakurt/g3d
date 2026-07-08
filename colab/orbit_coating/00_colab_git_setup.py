@@ -6,14 +6,8 @@ import sys
 from pathlib import Path
 
 # ============ AYARLAR ============
-# Public repo (push ettikten sonra URL'yi guncelleyin):
 REPO_URL = "https://github.com/rckarakurt/g3d.git"
 REPO_BRANCH = "main"
-
-# Private repo — Colab: Secrets -> GITHUB_TOKEN, sonra:
-# from google.colab import userdata
-# REPO_URL = f"https://{userdata.get('GITHUB_TOKEN')}@github.com/rckarakurt/g3d.git"
-
 REPO_DIR = Path("/content/g3d")
 # ================================
 
