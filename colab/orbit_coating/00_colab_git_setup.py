@@ -103,12 +103,13 @@ if _commit.stdout.strip():
 
 from turntable_render import wall_azimuth_grid, wall_orbit_camera
 
-print("Aci konvansiyonu: Y ekseni, -90..+90, 0=duz yuz (+Z)")
+print("Aci konvansiyonu: Y ekseni, -90..+90, 0=duz yuz (+Z), ±90=tam yan (±X)")
 print("Ornek grid:", wall_azimuth_grid(45, 90))
 for _az in (-90, 0, 90):
     _c2w = wall_orbit_camera(_az, obliquity_deg=18.0, distance=1.0, target=np.zeros(3))
     _eye = _c2w[:3, 3]
-    print(f"  az {_az:+4d} -> eye ({_eye[0]:+.3f}, {_eye[1]:+.3f}, {_eye[2]:+.3f})")
+    _lat = "YAN +X" if _az == 90 else ("YAN -X" if _az == -90 else "ON +Z")
+    print(f"  az {_az:+4d} ({_lat}) -> eye ({_eye[0]:+.3f}, {_eye[1]:+.3f}, {_eye[2]:+.3f})")
 
 print_repo_info()
 print("\nSonraki adim: 1 -> 1b -> 2 -> 5b -> 3 -> 4 -> 6 -> 7")

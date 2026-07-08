@@ -26,9 +26,10 @@ SYNC_AZIMUTHS_FROM_UNITY = True
 # Oncelik: /content/medical_gan_dataset (Bolum 5b); yoksa Drive fallback
 UNITY_DATASET = Path("/content/medical_gan_dataset")
 
-OBLIQUITY_DEG = 18.0  # mukoza normaline gore egim (duvara yapisik gorunum)
+OBLIQUITY_DEG = 18.0  # on gorunumde hafif Y egimi; ±90 yan profilde etkisiz
 RENDER_SIZE = 768
 WALL_MOUNTED = True
+DISTANCE_SCALE = 3.2  # yan profil icin orbit yaricapi (polyp etrafinda daha genis)
 # ================================
 
 import os
@@ -192,7 +193,7 @@ manifest = render_turntable_views(
     width=RENDER_SIZE,
     height=RENDER_SIZE,
     elevation_deg=OBLIQUITY_DEG,
-    distance_scale=2.8,
+    distance_scale=DISTANCE_SCALE,
     wall_mounted=WALL_MOUNTED,
     orbit_mode="lumen",  # Y ekseni -90..+90, 0=duz yuz (+Z)
 )

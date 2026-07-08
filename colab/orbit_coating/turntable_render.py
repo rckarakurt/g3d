@@ -151,13 +151,16 @@ def wall_orbit_camera(
             dtype=np.float64,
         )
     else:
-        # Y-axis only: X-Z arc, az=0 -> +Z (frontal)
+        # Y ekseni: X-Z duvar yayi. az=0 -> +Z (on), az=±90 -> tam yan ±X.
+        # obliquity yalnizca onde (dir_z>0) Y egimi; yan profilde saf ±X kalir.
         az = np.radians(float(np.clip(azimuth_deg, -90.0, 90.0)))
+        dir_x = np.sin(az)
+        dir_z = np.cos(az)
         direction = np.array(
             [
-                np.sin(az) * np.sin(obl),
-                0.0,
-                np.cos(az) * np.sin(obl) + np.cos(obl),
+                dir_x,
+                np.sin(obl) * dir_z,
+                dir_z * np.cos(obl),
             ],
             dtype=np.float64,
         )
