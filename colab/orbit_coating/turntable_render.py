@@ -306,14 +306,19 @@ def render_wall_mounted_frame(
     wall_center: np.ndarray,
     wall_radius: float,
     mucosa_rgb: np.ndarray | None = None,
-) -> np.ndarray:
-    """Mukoza disk + textured polyp (duvara yapisik gorunum)."""
-    mucosa = MUCOSA_RGB if mucosa_rgb is None else np.asarray(mucosa_rgb, dtype=np.uint8)
+    include_mucosa: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Textured polyp; opsiyonel mukoza disk (onizleme icin).
+
+    View bank / composite icin include_mucosa=False — yalnizca polyp, seffaf arka plan.
+    """
     out = np.zeros((height, width, 3), dtype=np.uint8)
     zbuf = np.full((height, width), np.inf, dtype=np.float32)
 
-    w_verts, w_faces = make_wall_disk(wall_center, radius=wall_radius)
-    render_flat_mesh_software(w_verts, w_faces, mucosa, k, c2w, width, height, out, zbuf)
+    if include_mucosa:
+        mucosa = MUCOSA_RGB if mucosa_rgb is None else np.asarray(mucosa_rgb, dtype=np.uint8)
+        w_verts, w_faces = make_wall_disk(wall_center, radius=wall_radius)
+        render_flat_mesh_software(w_verts, w_faces, mucosa, k, c2w, width, height, out, zbuf)
 
     w2c = np.linalg.inv(c2w.astype(np.float64))
     hom = np.hstack([data.vertices, np.ones((len(data.vertices), 1), dtype=np.float64)])
@@ -350,7 +355,56 @@ def render_wall_mounted_frame(
             min_v,
             max_v,
         )
-    return out
+    return out, zbuf
+
+
+def _render_polyp_rgb_zbuf(
+    data: TexturedMeshData,
+    k: np.ndarray,
+    c2w: np.ndarray,
+    width: int,
+    height: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Polyp mesh only — no mucosa disk."""
+    w2c = np.linalg.inv(c2w.astype(np.float64))
+    hom = np.hstack([data.vertices, np.ones((len(data.vertices), 1), dtype=np.float64)])
+    cam = (w2c @ hom.T).T[:, :3]
+    zv = cam[:, 2]
+    fx, fy, cx, cy = k[0, 0], k[1, 1], k[0, 2], k[1, 2]
+    zsafe = np.maximum(zv, 1e-6)
+    us = fx * cam[:, 0] / zsafe + cx
+    vs = fy * cam[:, 1] / zsafe + cy
+    tex = data.texture
+
+    out = np.zeros((height, width, 3), dtype=np.uint8)
+    zbuf = np.full((height, width), np.inf, dtype=np.float32)
+
+    from mesh_render import _rasterize_tri_vectorized
+
+    for tri in data.faces:
+        i0, i1, i2 = int(tri[0]), int(tri[1]), int(tri[2])
+        if zv[i0] <= 1e-4 or zv[i1] <= 1e-4 or zv[i2] <= 1e-4:
+            continue
+        pts = np.array([[us[i0], vs[i0]], [us[i1], vs[i1]], [us[i2], vs[i2]]])
+        min_u = max(0, int(np.floor(pts[:, 0].min())))
+        max_u = min(width - 1, int(np.ceil(pts[:, 0].max())))
+        min_v = max(0, int(np.floor(pts[:, 1].min())))
+        max_v = min(height - 1, int(np.ceil(pts[:, 1].max())))
+        if min_u > max_u or min_v > max_v:
+            continue
+        _rasterize_tri_vectorized(
+            pts,
+            data.uvs[[i0, i1, i2]],
+            np.array([zv[i0], zv[i1], zv[i2]], dtype=np.float64),
+            tex,
+            out,
+            zbuf,
+            min_u,
+            max_u,
+            min_v,
+            max_v,
+        )
+    return out, zbuf
 
 
 def render_mesh_rgba_software(
@@ -363,17 +417,26 @@ def render_mesh_rgba_software(
     wall_mounted: bool = True,
     wall_center: np.ndarray | None = None,
     wall_radius: float | None = None,
+    include_mucosa: bool = False,
 ) -> np.ndarray:
+    """RGBA PNG: polyp opak, arka plan seffaf (z-buffer alpha)."""
     if wall_mounted:
         center = wall_center if wall_center is not None else polyp_gaze_target(data.vertices)
         radius = wall_radius if wall_radius is not None else float(np.linalg.norm(data.vertices, axis=1).max()) * 2.2
-        rgb = render_wall_mounted_frame(
-            data, k, c2w, width, height, wall_center=center, wall_radius=radius
+        rgb, zbuf = render_wall_mounted_frame(
+            data,
+            k,
+            c2w,
+            width,
+            height,
+            wall_center=center,
+            wall_radius=radius,
+            include_mucosa=include_mucosa,
         )
     else:
-        rgb = render_mesh_frame_software(data, k, c2w, width, height)
+        rgb, zbuf = _render_polyp_rgb_zbuf(data, k, c2w, width, height)
 
-    alpha = (rgb.sum(axis=2) > 12).astype(np.uint8) * 255
+    alpha = np.where(zbuf < np.inf, 255, 0).astype(np.uint8)
     return np.dstack([rgb, alpha])
 
 
@@ -392,6 +455,7 @@ def render_turntable_views(
     simplify: bool = True,
     wall_mounted: bool = True,
     orbit_mode: str = "lumen",
+    include_mucosa: bool = False,
 ) -> dict:
     """Render textured polyp from wall-orbit azimuths; save RGBA PNG + manifest."""
     import cv2
@@ -426,6 +490,7 @@ def render_turntable_views(
             wall_mounted=wall_mounted,
             wall_center=wall_center,
             wall_radius=radius * 2.4,
+            include_mucosa=include_mucosa,
         )
         name = f"view_az{int(round(az)):03d}.png"
         cv2.imwrite(str(out_dir / name), cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA))
