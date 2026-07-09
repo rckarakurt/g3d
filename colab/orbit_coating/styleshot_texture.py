@@ -208,13 +208,47 @@ def resolve_style_ref_path(style_ref: Path | str) -> Path:
 
 
 def resolve_drive_style_ref(stem: str, drive_vrcaps: Path | None = None) -> Path:
-    """Drive/vrcaps altinda stem.jpg veya stem.png arar."""
-    root = Path(drive_vrcaps or DRIVE_VRCAPS)
-    for name in (f"{stem}.jpg", f"{stem}.png", f"{stem}.jpeg"):
+    """Drive/vrcaps altinda stem.jpg / stem.png (buyuk-kucuk harf duyarsiz)."""
+    from colab_content_paths import resolve_drive_vrcaps_root
+
+    root = Path(drive_vrcaps) if drive_vrcaps is not None else resolve_drive_vrcaps_root()
+    if not root.is_dir():
+        raise FileNotFoundError(f"vrcaps klasoru yok: {root}")
+
+    image_exts = {".jpg", ".jpeg", ".png", ".webp"}
+    for name in (f"{stem}.jpg", f"{stem}.jpeg", f"{stem}.png", f"{stem}.webp"):
         candidate = root / name
-        if candidate.exists() and candidate.stat().st_size > 1_000:
+        if candidate.is_file() and candidate.stat().st_size > 1_000:
             return candidate
-    raise FileNotFoundError(f"Drive stil referansi yok: {root / stem}.[jpg|png]")
+
+    stem_lower = stem.lower()
+    matches: list[Path] = []
+    try:
+        for entry in root.iterdir():
+            if not entry.is_file():
+                continue
+            if entry.stem.lower() != stem_lower:
+                continue
+            if entry.suffix.lower() not in image_exts:
+                continue
+            if entry.stat().st_size > 1_000:
+                matches.append(entry)
+    except OSError as exc:
+        raise FileNotFoundError(f"vrcaps klasoru okunamadi: {root}") from exc
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        return sorted(matches, key=lambda p: p.name.lower())[0]
+
+    try:
+        files = sorted(p.name for p in root.iterdir() if p.is_file())
+    except OSError:
+        files = []
+    raise FileNotFoundError(
+        f"Drive stil referansi yok: {root / stem}.[jpg|jpeg|png]\n"
+        f"vrcaps dosyalari: {files[:40]}"
+    )
 
 
 def open_texture_session(

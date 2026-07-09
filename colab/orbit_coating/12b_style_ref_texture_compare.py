@@ -19,7 +19,7 @@ PROMPT = (
     "smooth organic surface, realistic endoscopic texture, clinical photography"
 )
 
-DRIVE_VRCAPS = Path("/content/drive/MyDrive/vrcaps")
+DRIVE_VRCAPS = Path("/content/drive/MyDrive/vrcaps")  # resolve_drive_vrcaps_root() ile guncellenir
 STYLE_REF_STEMS = ("kvasir_style_ref", "polyp_texture")
 # ================================
 
@@ -32,7 +32,7 @@ sys.path.insert(0, "/content/g3d")
 from vrcaps_colab_bootstrap import bootstrap
 
 bootstrap()
-from colab_content_paths import install_sys_path
+from colab_content_paths import install_sys_path, resolve_drive_vrcaps_root
 
 install_sys_path()
 sys.path.insert(0, "/content/StyleShot")
@@ -49,6 +49,14 @@ if PLY_PATH is None:
 
 print("Style encoder kontrol...")
 print("Encoder:", ensure_style_encoder())
+
+DRIVE_VRCAPS = resolve_drive_vrcaps_root(mount=True)
+print("Drive vrcaps:", DRIVE_VRCAPS)
+try:
+    ref_listing = sorted(p.name for p in DRIVE_VRCAPS.iterdir() if p.is_file())
+    print("vrcaps gorseller:", ", ".join(ref_listing[:20]))
+except OSError:
+    pass
 
 style_refs: list[tuple[str, Path]] = []
 for stem in STYLE_REF_STEMS:
