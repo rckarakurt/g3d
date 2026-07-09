@@ -23,9 +23,9 @@ GAZE_STAGES = [
     ("05_upload_unity_dataset_colab.py", "## 5b. Unity dataset — Drive → /content"),
     ("14_gaze_colab_pipeline.py", "## 6. Gaze anchor + acilar + trajectory map"),
     ("00_gaze_composite_colab.md", None),
-    ("15_gaze_composite_colab.py", "## 7. Composite (view bank + RGB)"),
-    ("00_unity_polyp_angle_pairs.md", None),
-    ("16_unity_polyp_angle_pairs_colab.py", "## 8. Sabit Unity↔polyp aci ciftleri (yan yana)"),
+    ("15_gaze_composite_colab.py", "## 7. Trajectory composite (tum kareler)"),
+    ("00_paper_angle_composites_colab.md", None),
+    ("16_paper_angle_composites_colab.py", "## 8. Makale — 7 sabit aci sentetik composite"),
 ]
 
 
@@ -65,8 +65,7 @@ def main() -> None:
 | 3–4 | UV + texture + render (**Unity acilari**) + onizleme |
 | **5b** | **Unity dataset — Drive → /content** |
 | **6** | **Gaze anchor + acilar** |
-| **7** | **Composite (view bank + RGB)** |
-| **8** | **Sabit Unity↔polyp aci ciftleri (yan yana)** |
+| **7** | **Composite (view bank + RGB, /content)** |
 
 Kod degisikligi: GitHub'a push → Colab'da **Bolum 0** tekrar calistir (`git pull`).
 Varsayilan ciktilar **`/content`** — Drive yalnizca `COPY_TO_DRIVE = True` ile yedek.
