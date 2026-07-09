@@ -42,6 +42,7 @@ captures/export_gaze_rgb_marked.py
 captures/gaze_composite.py
 captures/paper_angle_composites.py
 captures/texture_paper_figure.py
+captures/eccv_figure.py
 
 colab/VRCaps_PLY_DriveFolder_Colab.ipynb
 colab/_gen_ply_drivefolder_colab_notebook.py

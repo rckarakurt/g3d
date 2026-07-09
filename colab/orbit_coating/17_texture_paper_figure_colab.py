@@ -1,17 +1,13 @@
-# 17 — Makale: stil referansi + StyleShot UV texture tablosu + validation
+# 17 — Makale: stil referansi + StyleShot UV texture (ECCV figure) + validation
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 REPO_DIR = Path("/content/g3d")
 OUT_ROOT = Path("/content/ply_styleshot_out")
 TEX_DIR = OUT_ROOT / "uv_texture"
-VIEW_BANK = OUT_ROOT / "view_bank"
 FIG_OUT = Path("/content/paper_texture_figure")
-
-PANEL_SIZE = 640
 # ================================
 
 sys.path.insert(0, str(REPO_DIR))
@@ -34,12 +30,15 @@ print("View bank:", view_bank)
 summary = export_texture_paper_figure(
     TEX_DIR,
     FIG_OUT,
-    panel_size=PANEL_SIZE,
     view_bank_dir=view_bank if view_bank.exists() else None,
 )
 
-print("\nMakale tablosu:", summary["table_figure"])
-print("Validation:", FIG_OUT / "texture_validation_report.json")
+print("\nECCV figure (PNG):", summary["table_figure"])
+if summary.get("table_figure_pdf"):
+    print("ECCV figure (PDF):", summary["table_figure_pdf"])
+print("LaTeX table:", summary.get("validation_latex"))
+print("Caption hint:", summary.get("latex_caption_hint"))
+print("Validation JSON:", FIG_OUT / "texture_validation_report.json")
 val = summary["validation"]
 print(
     f"  luminance_hist_corr={val['luminance_hist_corr']:.3f}  "

@@ -20,7 +20,9 @@ Unity ve polyp **ayri panel olarak gosterilmez**.
 ```
 /content/paper_angle_composites/
 ├── singles/composite_f0067_azm045.png ...   (7 bindirilmis sentetik PNG)
-├── paper_composites_strip_7.png           (7 composite yan yana — makale)
+├── paper_composites_strip_7.png           (ECCV, 122 mm, 300 DPI)
+├── paper_composites_strip_7.pdf           (varsa)
+├── paper_angle_pairs_table.tex            (ECCV booktabs)
 └── paper_composites_manifest.json
 ```
 

@@ -8,8 +8,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-BG = (248, 248, 250)
-HEADER = (32, 32, 36)
+from eccv_figure import (
+    ECCV_DPI,
+    build_full_width_row,
+    save_eccv_figure,
+    validation_metrics_latex,
+)
 
 
 def _load_rgb(path: Path) -> np.ndarray:
@@ -23,39 +27,19 @@ def _resize_square(rgb: np.ndarray, size: int) -> np.ndarray:
     return cv2.resize(rgb, (size, size), interpolation=cv2.INTER_AREA)
 
 
-def _header_bar(width: int, title: str, *, height: int = 52) -> np.ndarray:
-    bar = np.full((height, width, 3), HEADER, dtype=np.uint8)
-    cv2.putText(
-        bar,
-        title,
-        (12, height - 16),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.62,
-        (240, 240, 240),
-        1,
-        cv2.LINE_AA,
-    )
-    return bar
-
-
 def build_texture_paper_table(
     style_ref_rgb: np.ndarray,
     texture_rgb: np.ndarray,
     *,
-    panel_size: int = 640,
-    gap: int = 16,
-    left_title: str = "Style reference",
-    right_title: str = "StyleShot UV texture",
+    aspect: float = 1.0,
 ) -> np.ndarray:
-    """Two-column publication table: reference | generated texture."""
-    left = _resize_square(style_ref_rgb, panel_size)
-    right = _resize_square(texture_rgb, panel_size)
-    left_col = np.vstack([_header_bar(panel_size, left_title), left])
-    right_col = np.vstack([_header_bar(panel_size, right_title), right])
-    sep = np.full((left_col.shape[0], gap, 3), BG, dtype=np.uint8)
-    row = np.hstack([left_col, sep, right_col])
-    pad = np.full((gap, row.shape[1], 3), BG, dtype=np.uint8)
-    return np.vstack([pad, row, pad])
+    """ECCV full-width two-panel figure: style reference | generated UV texture."""
+    return build_full_width_row(
+        [style_ref_rgb, texture_rgb],
+        ["(a)", "(b)"],
+        aspect=aspect,
+        subtitles=None,
+    )
 
 
 def _lab_stats(rgb: np.ndarray) -> dict[str, float]:
@@ -180,10 +164,10 @@ def export_texture_paper_figure(
     tex_dir: Path,
     out_dir: Path,
     *,
-    panel_size: int = 640,
+    aspect: float = 1.0,
     view_bank_dir: Path | None = None,
 ) -> dict:
-    """Build paper table + validation report from Bolum 3 uv_texture output."""
+    """Build ECCV figure + validation report from Bolum 3 uv_texture output."""
     tex_dir = Path(tex_dir).resolve()
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -229,25 +213,38 @@ def export_texture_paper_figure(
                 else:
                     view_rgb = cv2.cvtColor(view_bgra, cv2.COLOR_BGR2RGB)
 
-    table = build_texture_paper_table(style_ref_rgb, texture_rgb, panel_size=panel_size)
-    table_path = out_dir / "paper_texture_ref_table.png"
-    cv2.imwrite(str(table_path), cv2.cvtColor(table, cv2.COLOR_RGB2BGR))
+    table = build_texture_paper_table(style_ref_rgb, texture_rgb, aspect=aspect)
+    figure_paths = save_eccv_figure(table, out_dir / "paper_texture_ref_table.png")
 
     metrics = validate_uv_texture(style_ref_rgb, texture_rgb, view_bank_rgb=view_rgb)
+    latex_path = out_dir / "texture_validation_table.tex"
+    latex_path.write_text(
+        validation_metrics_latex(
+            metrics,
+            caption=(
+                "Quantitative checks for the StyleShot UV texture. "
+                "Subfigure~(a) is the style exemplar; (b) is the synthesized atlas."
+            ),
+        ),
+        encoding="utf-8",
+    )
+
     summary = {
         "style_ref": str(style_ref_path),
         "texture": str(texture_path),
-        "table_figure": str(table_path),
-        "panel_size": panel_size,
+        "table_figure": figure_paths.get("png"),
+        "table_figure_pdf": figure_paths.get("pdf"),
+        "eccv_dpi": ECCV_DPI,
+        "eccv_textwidth_mm": 122.0,
         "texture_meta": meta,
         "view_bank_file": str(view_file) if view_file else None,
         "validation": metrics,
-        "validation_notes": [
-            "Qualitative: mucosa tone, vascular detail, absence of green/flat regions.",
-            "Quantitative: lab_delta, luminance_hist_corr, texture_entropy, green_fraction.",
-            "Geometric: compare view_bank 0 deg render with texture (ssim_texture_vs_view0).",
-            "Clinical plausibility: expert rating on 1-5 scale (recommended for paper).",
-        ],
+        "validation_latex": str(latex_path),
+        "latex_caption_hint": (
+            "\\caption{Style-conditioned texture synthesis. "
+            "(a)~Endoscopic style exemplar $\\mathbf{I}_{\\mathrm{style}}$ (not a sequence frame). "
+            "(b)~Generated UV texture $\\mathbf{T}$ for lesion mesh $\\mathcal{L}$.}"
+        ),
     }
     (out_dir / "texture_validation_report.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
