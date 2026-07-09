@@ -14,6 +14,8 @@ colab/orbit_coating/13_show_view_strip.py
 colab/orbit_coating/14_gaze_colab_pipeline.py
 colab/orbit_coating/15_gaze_composite_colab.py
 colab/orbit_coating/16_paper_angle_composites_colab.py
+colab/orbit_coating/17_texture_paper_figure_colab.py
+colab/orbit_coating/00_texture_paper_figure.md
 colab/orbit_coating/00_gaze_drive_upload.md
 colab/orbit_coating/00_gaze_composite_colab.md
 colab/orbit_coating/00_paper_angle_composites_colab.md
@@ -39,6 +41,7 @@ captures/export_gaze_trajectory_map.py
 captures/export_gaze_rgb_marked.py
 captures/gaze_composite.py
 captures/paper_angle_composites.py
+captures/texture_paper_figure.py
 
 colab/VRCaps_PLY_DriveFolder_Colab.ipynb
 colab/_gen_ply_drivefolder_colab_notebook.py

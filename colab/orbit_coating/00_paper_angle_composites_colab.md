@@ -24,4 +24,4 @@ Unity ve polyp **ayri panel olarak gosterilmez**.
 └── paper_composites_manifest.json
 ```
 
-Once: **0** (git pull) → **5b** → **3** → **8**
+Once: **0** (git pull) → **5b** → **3** → **3c** → **8**

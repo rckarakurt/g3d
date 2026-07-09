@@ -15,6 +15,8 @@ STAGES = [
     ("01b_styleshot_models.py", "## 1b. StyleShot modelleri (HF, ip.bin ~8 GB)"),
     ("02_fetch_ply_drive_folder.py", "## 2. Drive klasorunden PLY indir"),
     ("12_ply_drivefolder_pipeline.py", "## 3. Pipeline (UV + StyleShot + render)"),
+    ("00_texture_paper_figure.md", None),
+    ("17_texture_paper_figure_colab.py", "## 3c. Makale — stil referansi + UV texture tablosu"),
     ("13_show_view_strip.py", "## 4. Yan yana onizleme (360° full orbit — arka dahil)"),
 ]
 
@@ -34,6 +36,7 @@ RUN_FROM_REPO = frozenset(
     {
         "15_gaze_composite_colab.py",
         "16_paper_angle_composites_colab.py",
+        "17_texture_paper_figure_colab.py",
     }
 )
 

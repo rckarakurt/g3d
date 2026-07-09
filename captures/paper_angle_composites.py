@@ -101,7 +101,7 @@ def export_paper_angle_composites(
     out_dir: Path,
     *,
     pairs: tuple[tuple[int, float], ...] = PAPER_ANGLE_PAIRS,
-    scale_boost: float = 12.0,
+    scale_boost: float = 16.0,
     lab_match: bool = True,
     strip_cell_w: int = 340,
     strip_cell_h: int = 255,

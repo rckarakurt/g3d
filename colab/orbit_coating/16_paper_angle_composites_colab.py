@@ -14,7 +14,7 @@ REPO_DIR = Path("/content/g3d")
 #   image_0067 -45° | 0078 -30° | 0087 -15° | 0098 0°
 #   0121 +15° | 0132 +30° | 0143 +45°
 
-SCALE_BOOST = 12.0   # polyp capraz cizgisi (px); 8=onceki, 12=~%50 daha buyuk
+SCALE_BOOST = 16.0   # polyp capraz cizgisi (px); 12=onceki, 16=biraz daha buyuk
 LAB_MATCH = True
 COPY_TO_DRIVE = False
 OUT_DIR = Path("/content/paper_angle_composites")
