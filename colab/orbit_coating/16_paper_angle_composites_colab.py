@@ -44,10 +44,14 @@ from unity_dataset_angles import ensure_geometric_gaze_views, print_strip_refere
 def show_outputs(out_dir: Path) -> None:
     from IPython.display import Image, display
 
-    strip = out_dir / "paper_composites_strip_7.png"
+    strip = out_dir / "paper_pairs_strip_7.png"
     if strip.exists():
-        print("Strip (makale):")
+        print("Pairs strip (Unity | Polyp | Composite ust uste, 7 kolon):")
         display(Image(filename=str(strip), width=1200))
+    comp_strip = out_dir / "paper_composites_strip_7.png"
+    if comp_strip.exists():
+        print("Composites strip (yan yana):")
+        display(Image(filename=str(comp_strip), width=1200))
     singles = sorted((out_dir / "singles").glob("composite_*.png"))
     for path in singles[:3]:
         print(path.name)
@@ -90,7 +94,10 @@ summary = export_paper_angle_composites(
 )
 print("\nTamamlandi.")
 print("  singles:", OUT_DIR / "singles")
-print("  strip:  ", OUT_DIR / summary["strip"])
+print("  pairs strip:", OUT_DIR / summary["pairs_strip"])
+print("  composites strip:", OUT_DIR / summary["composites_strip"])
+print("  composites stack:", OUT_DIR / summary["composites_stack"])
+print("  pair stacks:", OUT_DIR / "pairs_stacked")
 print("  manifest:", OUT_DIR / "paper_composites_manifest.json")
 
 drive_out = PLY_OUT_DRIVE.parent / "paper_angle_composites"
