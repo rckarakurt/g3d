@@ -1,7 +1,7 @@
 """Paper figures: 7 fixed Unity frame + textured polyp view-bank composites.
 
-Each pair uses an explicit frame index and bank azimuth (15° steps -45..+45),
-matching export_angle_strip_15deg.py frame selection.
+Polyp is pasted onto Unity mucosa center (single overlaid image per pair).
+Outputs: 7 full-resolution composites + one horizontal strip for publication.
 """
 
 from __future__ import annotations
@@ -65,19 +65,11 @@ def _resolve_polyp_path(bank_files: dict[float, Path], az_deg: float) -> Path:
     return bank_files[nearest]
 
 
-def _rgba_on_bg(rgba: np.ndarray, bg: tuple[int, int, int] = BG) -> np.ndarray:
-    rgb = rgba[:, :, :3].astype(np.float32)
-    a = rgba[:, :, 3:4].astype(np.float32) / 255.0
-    bg_arr = np.array(bg, dtype=np.float32)
-    out = rgb * a + bg_arr * (1.0 - a)
-    return np.clip(out, 0, 255).astype(np.uint8)
-
-
 def _fit_rgb(img: np.ndarray, w: int, h: int) -> np.ndarray:
     return cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
 
 
-def _label_bar(width: int, lines: list[str], *, bar_h: int = 52) -> np.ndarray:
+def _label_bar(width: int, lines: list[str], *, bar_h: int = 44) -> np.ndarray:
     bar = np.zeros((bar_h, width, 3), dtype=np.uint8)
     for i, line in enumerate(lines):
         cv2.putText(
@@ -93,22 +85,6 @@ def _label_bar(width: int, lines: list[str], *, bar_h: int = 52) -> np.ndarray:
     return bar
 
 
-def _row_thumb(img: np.ndarray, cell_w: int, cell_h: int, caption: str) -> np.ndarray:
-    thumb = _fit_rgb(img, cell_w, cell_h)
-    cap = np.zeros((22, cell_w, 3), dtype=np.uint8)
-    cv2.putText(
-        cap,
-        caption,
-        (6, 16),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.42,
-        (180, 200, 220),
-        1,
-        cv2.LINE_AA,
-    )
-    return np.vstack([cap, thumb])
-
-
 def _hstack_panels(panels: list[np.ndarray], gap: int = PAD) -> np.ndarray:
     if not panels:
         raise ValueError("No panels")
@@ -119,16 +95,6 @@ def _hstack_panels(panels: list[np.ndarray], gap: int = PAD) -> np.ndarray:
     return strip
 
 
-def _vstack_panels(panels: list[np.ndarray], gap: int = PAD) -> np.ndarray:
-    if not panels:
-        raise ValueError("No panels")
-    stack = panels[0]
-    for panel in panels[1:]:
-        g = np.full((gap, stack.shape[1], 3), BG[0], dtype=np.uint8)
-        stack = np.vstack([stack, g, panel])
-    return stack
-
-
 def export_paper_angle_composites(
     dataset_dir: Path,
     view_bank_dir: Path,
@@ -137,11 +103,10 @@ def export_paper_angle_composites(
     pairs: tuple[tuple[int, float], ...] = PAPER_ANGLE_PAIRS,
     scale_boost: float = 8.0,
     lab_match: bool = True,
-    cell_w: int = 320,
-    cell_h: int = 200,
-    label_h: int = 52,
+    strip_cell_w: int = 340,
+    strip_cell_h: int = 255,
 ) -> dict:
-    """Composite polyp onto Unity center; save singles + stacked pair strips."""
+    """Paste textured polyp onto Unity mucosa center; save 7 overlays + strip."""
     from gaze_composite import (
         estimate_target_diameter_px,
         load_camera,
@@ -154,9 +119,7 @@ def export_paper_angle_composites(
     view_bank_dir = Path(view_bank_dir).resolve()
     out_dir = Path(out_dir).resolve()
     singles_dir = out_dir / "singles"
-    pairs_dir = out_dir / "pairs_stacked"
     singles_dir.mkdir(parents=True, exist_ok=True)
-    pairs_dir.mkdir(parents=True, exist_ok=True)
 
     _, bank_files, polyp_diameter_mm = _load_bank_index(view_bank_dir)
     cam = load_camera(dataset_dir)
@@ -175,8 +138,7 @@ def export_paper_angle_composites(
     global_distance_m = float(np.median(distances)) if distances else float("nan")
 
     results: list[dict] = []
-    pair_columns: list[np.ndarray] = []
-    composite_only_panels: list[np.ndarray] = []
+    strip_panels: list[np.ndarray] = []
 
     for frame, bank_az in pairs:
         rgb_path = dataset_dir / "rgb" / f"{frame:06d}.png"
@@ -211,7 +173,6 @@ def export_paper_angle_composites(
             anchor_v,
             lab_match=lab_match,
         )
-        polyp_rgb = _rgba_on_bg(patch_rgba)
 
         sign = "m" if bank_az < 0 else "p"
         az_label = f"{sign}{abs(int(round(bank_az))):03d}"
@@ -220,89 +181,66 @@ def export_paper_angle_composites(
         single_path = singles_dir / f"{stem}.png"
         cv2.imwrite(str(single_path), cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR))
 
-        # Per-pair vertical stack: Unity | Polyp | Composite (ust uste)
-        pair_stack = _vstack_panels(
-            [
-                _label_bar(
-                    cell_w,
-                    [
-                        f"image_{frame:04d}  ({bank_az:+.0f} deg)",
-                        polyp_path.name,
-                    ],
-                    bar_h=label_h,
-                ),
-                _row_thumb(unity_rgb, cell_w, cell_h, "Unity mucosa"),
-                _row_thumb(polyp_rgb, cell_w, cell_h, f"Polyp {bank_az:+.0f} deg"),
-                _row_thumb(composite_rgb, cell_w, cell_h, "Composite (ust uste)"),
-            ]
-        )
-        pair_stack_path = pairs_dir / f"pair_{stem}.png"
-        cv2.imwrite(str(pair_stack_path), cv2.cvtColor(pair_stack, cv2.COLOR_RGB2BGR))
-        pair_columns.append(pair_stack)
-
-        composite_only_panels.append(
-            _vstack_panels(
-                [
-                    _label_bar(cell_w, [f"{bank_az:+.0f} deg"], bar_h=28),
-                    _fit_rgb(composite_rgb, cell_w, cell_h),
-                ]
+        strip_panels.append(
+            _vstack_label_composite(
+                composite_rgb,
+                strip_cell_w,
+                strip_cell_h,
+                lines=[
+                    f"{bank_az:+.0f} deg",
+                    f"image_{frame:04d}",
+                ],
             )
         )
 
         measured_bank = float(row.get("view_bank_az_deg", float("nan")))
-        entry = {
-            "frame": frame,
-            "image_name": f"image_{frame:04d}.png",
-            "target_bank_az_deg": float(bank_az),
-            "measured_view_bank_az_deg": measured_bank,
-            "polyp_view_file": polyp_path.name,
-            "anchor_u": anchor_u,
-            "anchor_v": anchor_v,
-            "distance_m": distance_m,
-            "target_diameter_px": target_d,
-            "composite": str(single_path.relative_to(out_dir)),
-            "pair_stacked": str(pair_stack_path.relative_to(out_dir)),
-        }
-        results.append(entry)
+        results.append(
+            {
+                "frame": frame,
+                "image_name": f"image_{frame:04d}.png",
+                "target_bank_az_deg": float(bank_az),
+                "measured_view_bank_az_deg": measured_bank,
+                "polyp_view_file": polyp_path.name,
+                "anchor_u": anchor_u,
+                "anchor_v": anchor_v,
+                "distance_m": distance_m,
+                "target_diameter_px": target_d,
+                "composite": str(single_path.relative_to(out_dir)),
+            }
+        )
         print(
-            f"  frame {frame:4d} ({entry['image_name']})  "
-            f"bank {bank_az:+.0f}°  -> {polyp_path.name}"
+            f"  frame {frame:4d}  bank {bank_az:+.0f}°  "
+            f"-> {polyp_path.name}  (polyp mucosa ortasina bindirildi)"
         )
 
-    # 7 kolon yan yana: her kolonda Unity / Polyp / Composite ust uste
-    pairs_strip_path = out_dir / "paper_pairs_strip_7.png"
-    cv2.imwrite(
-        str(pairs_strip_path),
-        cv2.cvtColor(_hstack_panels(pair_columns), cv2.COLOR_RGB2BGR),
-    )
-
-    # Sadece composite'ler yan yana (makale)
     composites_strip_path = out_dir / "paper_composites_strip_7.png"
     cv2.imwrite(
         str(composites_strip_path),
-        cv2.cvtColor(_hstack_panels(composite_only_panels), cv2.COLOR_RGB2BGR),
+        cv2.cvtColor(_hstack_panels(strip_panels), cv2.COLOR_RGB2BGR),
     )
 
-    # 7 composite tek sutunda ust uste
-    composites_stack_path = out_dir / "paper_composites_stack_7.png"
-    cv2.imwrite(
-        str(composites_stack_path),
-        cv2.cvtColor(_vstack_panels(composite_only_panels), cv2.COLOR_RGB2BGR),
-    )
-
-    manifest_path = out_dir / "paper_composites_manifest.json"
     summary = {
         "dataset_dir": str(dataset_dir),
         "view_bank_dir": str(view_bank_dir),
         "out_dir": str(out_dir),
         "pairs": [{"frame": f, "bank_az_deg": a} for f, a in pairs],
         "count": len(results),
-        "pairs_strip": str(pairs_strip_path.name),
         "composites_strip": str(composites_strip_path.name),
-        "composites_stack": str(composites_stack_path.name),
         "singles_dir": singles_dir.name,
-        "pairs_stacked_dir": pairs_dir.name,
+        "description": "Polyp pasted on Unity mucosa center; no side-by-side Unity/polyp panels",
         "entries": results,
     }
-    manifest_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (out_dir / "paper_composites_manifest.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
     return summary
+
+
+def _vstack_label_composite(
+    composite_rgb: np.ndarray,
+    cell_w: int,
+    cell_h: int,
+    lines: list[str],
+) -> np.ndarray:
+    thumb = _fit_rgb(composite_rgb, cell_w, cell_h)
+    return np.vstack([_label_bar(cell_w, lines), thumb])

@@ -1,4 +1,4 @@
-# 16 — Makale: 7 sabit aci composite (Unity mucosa + StyleShot polyp view bank)
+# 16 — Makale: 7 sabit aci sentetik composite (polyp mucosa ortasina bindirilmis)
 from __future__ import annotations
 
 import sys
@@ -7,9 +7,9 @@ from pathlib import Path
 get_ipython().run_line_magic("pip", "install -q opencv-python-headless scipy")
 
 # ============ AYARLAR ============
-# Sabit eslestirme (export_angle_strip_15deg ile ayni):
-#   image_0067 -45°  | image_0078 -30° | image_0087 -15° | image_0098 0°
-#   image_0121 +15°  | image_0132 +30° | image_0143 +45°
+# Her cift: Unity mucosa + ayni acili textured polyp -> TEK bindirilmis goruntu
+#   image_0067 -45° | 0078 -30° | 0087 -15° | 0098 0°
+#   0121 +15° | 0132 +30° | 0143 +45°
 
 SCALE_BOOST = 8.0
 LAB_MATCH = True
@@ -31,9 +31,7 @@ for _mod in list(sys.modules):
 
 from colab_content_paths import (
     PLY_OUT_DRIVE,
-    UNITY_DATASET,
     copy_tree_if_requested,
-    drive_mounted,
     resolve_unity_dataset,
     resolve_view_bank,
 )
@@ -44,20 +42,16 @@ from unity_dataset_angles import ensure_geometric_gaze_views, print_strip_refere
 def show_outputs(out_dir: Path) -> None:
     from IPython.display import Image, display
 
-    strip = out_dir / "paper_pairs_strip_7.png"
+    strip = out_dir / "paper_composites_strip_7.png"
     if strip.exists():
-        print("Pairs strip (Unity | Polyp | Composite ust uste, 7 kolon):")
-        display(Image(filename=str(strip), width=1200))
-    comp_strip = out_dir / "paper_composites_strip_7.png"
-    if comp_strip.exists():
-        print("Composites strip (yan yana):")
-        display(Image(filename=str(comp_strip), width=1200))
+        print("Makale figuru (7 bindirilmis composite yan yana):")
+        display(Image(filename=str(strip), width=1400))
+
     singles = sorted((out_dir / "singles").glob("composite_*.png"))
-    for path in singles[:3]:
-        print(path.name)
-        display(Image(filename=str(path), width=480))
-    if len(singles) > 3:
-        print(f"... +{len(singles) - 3} daha singles/ klasorunde")
+    print(f"\nTekil sentetik goruntuler ({len(singles)} adet):")
+    for path in singles:
+        print(f"  {path.name}")
+        display(Image(filename=str(path), width=520))
 
 
 dataset = resolve_unity_dataset()
@@ -75,9 +69,9 @@ print("\nGaze acilari (dogrulama):")
 ensure_geometric_gaze_views(dataset, write_plot=False, force=True)
 print_strip_reference_mapping(dataset)
 
-print("\n=== 7 aci makale composite ===")
+print("\n=== 7 sentetik composite (polyp -> mucosa ortasi) ===")
 for frame, az in PAPER_ANGLE_PAIRS:
-    print(f"  image_{frame:04d}.png  <->  polyp {az:+.0f}°")
+    print(f"  image_{frame:04d}.png  +  polyp {az:+.0f}°  ->  tek bindirilmis PNG")
 
 if OUT_DIR.exists():
     import shutil
@@ -93,12 +87,9 @@ summary = export_paper_angle_composites(
     lab_match=LAB_MATCH,
 )
 print("\nTamamlandi.")
-print("  singles:", OUT_DIR / "singles")
-print("  pairs strip:", OUT_DIR / summary["pairs_strip"])
-print("  composites strip:", OUT_DIR / summary["composites_strip"])
-print("  composites stack:", OUT_DIR / summary["composites_stack"])
-print("  pair stacks:", OUT_DIR / "pairs_stacked")
-print("  manifest:", OUT_DIR / "paper_composites_manifest.json")
+print("  singles (7 PNG):", OUT_DIR / "singles")
+print("  makale strip:   ", OUT_DIR / summary["composites_strip"])
+print("  manifest:       ", OUT_DIR / "paper_composites_manifest.json")
 
 drive_out = PLY_OUT_DRIVE.parent / "paper_angle_composites"
 copy_tree_if_requested(OUT_DIR, drive_out, enabled=COPY_TO_DRIVE)
