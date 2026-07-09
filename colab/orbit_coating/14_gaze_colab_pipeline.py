@@ -74,34 +74,35 @@ def _show_colab_previews(dataset: Path) -> None:
         import pandas as pd
 
         df = pd.read_csv(csv_path)
-        cols = ["frame", "view_bank_az_deg", "view_elevation_deg", "is_gazing", "distance_m"]
-        if "view_bank_az_raw_deg" in df.columns:
-            cols.insert(2, "view_bank_az_raw_deg")
+        cols = ["frame", "view_bank_az_deg", "view_bank_az_raw_deg", "view_plane_deg", "is_gazing", "distance_m"]
+        show_cols = [c for c in cols if c in df.columns]
         print("gaze_views.csv (ilk 5 satir):")
-        display(df[cols].head())
-        bank = df["view_bank_az_deg"].astype(float)
-        print(
-            f"view_bank_az_deg: {bank.min():.1f} .. {bank.max():.1f}  "
-            f"(n={len(df)}, gazing={int(df['is_gazing'].sum())})"
-        )
+        display(df[show_cols].head())
+        if "view_bank_az_deg" in df.columns:
+            vb = df["view_bank_az_deg"].astype(float)
+            print(
+                f"view_bank_az_deg (Colab): {vb.min():.1f} .. {vb.max():.1f}  "
+                f"(n={len(df)}, gazing={int(df['is_gazing'].sum())})"
+            )
+        vp = df["view_plane_deg"].astype(float)
+        print(f"view_plane_deg (legacy): {vp.min():.1f} .. {vp.max():.1f}")
 
 
 dataset = resolve_unity_dataset()
 _require_dataset(dataset)
 
-print("\n1/3 Gaze anchor + geometric bank acilari (view_bank_az_deg)...")
+print("\n1/3 Gaze anchor + geometric bank acilari (Colab hizali)...")
 meta = ensure_geometric_gaze_views(dataset, write_plot=True)
 print("  anchor:", meta["anchor_pos"])
-print("  bank az span:", meta.get("bank_az_span_deg"))
-print("  angle method:", meta.get("angle_method", "geometric"))
+print("  orbit span:", meta.get("orbit_theta_span_deg"))
 print("  gazing:", meta.get("gazing_frame_count"), "/", meta.get("frame_count"))
 
-print("\n2/3 Trajectory map (view_bank_az_deg)...")
-map_path = export_gaze_trajectory_map(dataset, angle_field="view_bank_az_deg")
+print("\n2/3 Trajectory map (acili)...")
+map_path = export_gaze_trajectory_map(dataset)
 print("  ->", map_path)
 
 if MARKED_RGB:
-    print("\n3/3 RGB overlay (crosshair + view_bank_az_deg)...")
+    print("\n3/3 RGB overlay (crosshair + view_plane_deg)...")
     out_rgb = dataset / "gaze_rgb" / "rgb"
     export_marked_rgb(dataset, out_rgb, gazing_only=False, clean=True)
     print("  ->", out_rgb)

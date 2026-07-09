@@ -282,7 +282,7 @@ def save_debug_triptych(
         else f"mesh az {bank_az_lo:.0f}"
     )
     panels = [
-        _prep(unity_rgb, f"Unity f{frame:04d}  plane={view_plane_deg:.1f}"),
+        _prep(unity_rgb, f"Unity f{frame:04d}  bank_az={view_plane_deg:+.1f}"),
         _prep(patch_rgb, az_txt),
         _prep(composite_rgb, "composite"),
     ]
@@ -356,8 +356,6 @@ def prepare_trajectory_rows(
             for i, r in enumerate(rows):
                 r[f"{angle_col}_raw"] = r.get(angle_col, "")
                 r[angle_col] = str(vp_smooth[i])
-                if angle_col == "view_bank_az_deg":
-                    r["view_plane_deg"] = str(vp_smooth[i])
 
     if smooth_distance and smooth_window > 1:
         dist = col("distance_m")
@@ -468,9 +466,13 @@ def composite_dataset(
         unity_rgb = cv2.cvtColor(cv2.imread(str(rgb_path)), cv2.COLOR_BGR2RGB)
         if "view_bank_az_deg" in row and np.isfinite(float(row.get("view_bank_az_deg", float("nan")))):
             view_plane = float(row["view_bank_az_deg"])
+            view_bank_az = view_plane
+            view_bank_az_raw = float(row.get("view_bank_az_raw_deg", float("nan")))
         else:
             view_plane_raw = float(row.get("view_plane_deg", float("nan")))
             view_plane = unity_plane_to_bank_az(view_plane_raw)
+            view_bank_az = view_plane
+            view_bank_az_raw = float("nan")
 
         distance_m = float(row.get("distance_m", float("nan")))
         if global_scale and np.isfinite(global_distance_m):
@@ -529,6 +531,8 @@ def composite_dataset(
         manifest_rows.append(
             {
                 "frame": frame,
+                "view_bank_az_deg": view_bank_az,
+                "view_bank_az_raw_deg": view_bank_az_raw,
                 "view_plane_deg": view_plane,
                 "view_plane_deg_smoothed": smooth_angles,
                 "bank_az_lo_deg": az_lo,

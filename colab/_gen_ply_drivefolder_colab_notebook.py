@@ -62,13 +62,11 @@ def main() -> None:
 | 2 | Drive'dan PLY |
 | 3–4 | UV + texture + render (**Unity acilari**) + onizleme |
 | **5b** | **Unity dataset — Drive → /content** |
-| **6** | **Gaze anchor + geometric bank acilari** (`view_bank_az_deg`) |
+| **6** | **Gaze anchor + acilar** |
 | **7** | **Composite (view bank + RGB, /content)** |
 
 Kod degisikligi: GitHub'a push → Colab'da **Bolum 0** tekrar calistir (`git pull`).
 Varsayilan ciktilar **`/content`** — Drive yalnizca `COPY_TO_DRIVE = True` ile yedek.
-
-**Aci eslestirme:** Bolum 6 `view_bank_az_deg` uretir; Bolum 3 polyp bank bu acilarla senkron.
 """
 
     cells = [cell_md(header)]

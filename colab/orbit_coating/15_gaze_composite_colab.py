@@ -1,4 +1,4 @@
-# 15 — Aci eslestirmeli composite: Unity RGB + mesh (view_bank_az_deg)
+# 15 — Aci eslestirmeli composite: Unity RGB + Colab polyp view bank
 from __future__ import annotations
 
 import json
@@ -10,12 +10,14 @@ get_ipython().run_line_magic("pip", "install -q opencv-python-headless scipy")
 
 # ============ AYARLAR ============
 # Her Unity karesi icin:
-#   view_bank_az_deg (gaze_views.csv) -> view_bank'teki en yakin mesh acisi -> yapistir
+#   view_bank_az_deg (gaze_views.csv, geometric + Colab hizali)
+#   -> view_bank'teki en yakin polyp acisi -> yapistir
 
 SCALE_BOOST = 8.0
 STRICT_ANGLE_MATCH = True   # True: kare bazli aci (yumusatma yok)
 BANK_BLEND = True           # 5° arasi iki mesh gorunumu karistir
 GLOBAL_SCALE = True
+FORCE_GAZE_EXPORT = False   # True: gaze_views.csv yeniden uret
 
 SMOOTH_WINDOW = 5           # STRICT=False ise
 MAX_FRAMES = None           # test: 20
@@ -107,7 +109,12 @@ dataset = ensure_dataset_on_content()
 view_bank = resolve_view_bank()
 require_view_bank(view_bank)
 
-ensure_geometric_gaze_views(dataset, write_plot=False)
+gaze_csv = dataset / "poses" / "gaze_views.csv"
+if not gaze_csv.exists() or FORCE_GAZE_EXPORT:
+    print("gaze_views.csv uretiliyor (geometric + Colab bank az)...")
+    ensure_geometric_gaze_views(dataset, write_plot=False, force=FORCE_GAZE_EXPORT)
+else:
+    ensure_geometric_gaze_views(dataset, write_plot=False)
 
 if GAZE_COMPOSITE_OUT.exists():
     shutil.rmtree(GAZE_COMPOSITE_OUT)

@@ -52,7 +52,6 @@ from mesh_uv import save_uv_preview, unwrap_mesh_uv
 from style_encoder_drive import ensure_style_encoder
 from turntable_render import wall_azimuth_grid
 from unity_view_bank_angles import azimuths_from_gaze_dataset, save_angle_meta
-from unity_dataset_angles import ensure_geometric_gaze_views
 from colab_content_paths import PLY_OUT_DRIVE, copy_tree_if_requested, resolve_unity_dataset
 import styleshot_texture as _styleshot_tex
 
@@ -157,7 +156,12 @@ save_uv_preview(texture, tex_dir / "polyp_uv_texture_preview.png")
 print("   ->", tex_path)
 
 if SYNC_AZIMUTHS_FROM_UNITY and unity_dataset.exists() and (unity_dataset / "rgb").exists():
-    ensure_geometric_gaze_views(unity_dataset, write_plot=False)
+    gaze_csv = unity_dataset / "poses" / "gaze_views.csv"
+    if not gaze_csv.exists() and (unity_dataset / "rgb").exists():
+        from unity_dataset_angles import ensure_geometric_gaze_views
+
+        print("gaze_views.csv yok — Unity dataset uzerinde uretiliyor...")
+        ensure_geometric_gaze_views(unity_dataset, write_plot=False)
     AZIMUTHS_DEG, angle_meta = azimuths_from_gaze_dataset(
         unity_dataset,
         bin_deg=AZIMUTH_BIN_DEG,
