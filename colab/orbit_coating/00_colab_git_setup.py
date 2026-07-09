@@ -86,6 +86,7 @@ if CLEAN_OLD_OUTPUTS:
     for _p in (
         Path("/content/ply_styleshot_out"),
         Path("/content/gaze_composite"),
+        Path("/content/paper_angle_composites"),
         Path("/content/medical_gan_dataset"),
     ):
         if _p.exists():
@@ -113,4 +114,4 @@ for _az in (-90, 0, 90):
     print(f"  az {_az:+4d}: test nokta donduruldu -> {_v[0]}")
 
 print_repo_info()
-print("\nSonraki adim: 1 -> 1b -> 2 -> 5b -> 3 -> 4 -> 6 -> 7")
+print("\nSonraki adim: 1 -> 1b -> 2 -> 5b -> 3 -> 4 -> 6 -> 7 -> 8")

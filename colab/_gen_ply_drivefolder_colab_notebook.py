@@ -29,6 +29,30 @@ GAZE_STAGES = [
 ]
 
 
+# Scripts executed from /content/g3d after Bolum 0 (not embedded — always latest git)
+RUN_FROM_REPO = frozenset(
+    {
+        "15_gaze_composite_colab.py",
+        "16_paper_angle_composites_colab.py",
+    }
+)
+
+
+def cell_run_from_repo(script_name: str) -> dict:
+    rel = f"colab/orbit_coating/{script_name}"
+    src = f'''# Calistir: /content/g3d/{rel}  (Bolum 0 git pull sonrasi guncel kod)
+from pathlib import Path
+_script = Path("/content/g3d") / "{rel}"
+if not _script.exists():
+    raise FileNotFoundError(
+        f"Script yok: {{_script}}\\nOnce **Bolum 0** calistirin (git pull)."
+    )
+print("Calistiriliyor:", _script)
+exec(compile(_script.read_text(encoding="utf-8"), str(_script), "exec"), {{"__name__": "__main__"}})
+'''
+    return cell_code(src)
+
+
 def read_py(name: str) -> str:
     return (ORBIT / name).read_text(encoding="utf-8")
 
@@ -65,9 +89,10 @@ def main() -> None:
 | 3–4 | UV + texture + render (**Unity acilari**) + onizleme |
 | **5b** | **Unity dataset — Drive → /content** |
 | **6** | **Gaze anchor + acilar** |
-| **7** | **Composite (view bank + RGB, /content)** |
+| **7** | **Trajectory composite (tum kareler)** |
+| **8** | **Makale — 7 bindirilmis sentetik composite** |
 
-Kod degisikligi: GitHub'a push → Colab'da **Bolum 0** tekrar calistir (`git pull`).
+Bolum **7** ve **8** notebook icine gomulu degil; `/content/g3d` uzerinden calisir.
 Varsayilan ciktilar **`/content`** — Drive yalnizca `COPY_TO_DRIVE = True` ile yedek.
 """
 
@@ -79,7 +104,10 @@ Varsayilan ciktilar **`/content`** — Drive yalnizca `COPY_TO_DRIVE = True` ile
         elif title:
             cells.append(cell_md(title + "\n"))
         if fname.endswith(".py"):
-            cells.append(cell_code(read_py(fname)))
+            if fname in RUN_FROM_REPO:
+                cells.append(cell_run_from_repo(fname))
+            else:
+                cells.append(cell_code(read_py(fname)))
 
     nb = {
         "nbformat": 4,

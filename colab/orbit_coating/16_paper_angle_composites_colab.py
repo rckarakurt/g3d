@@ -1,10 +1,13 @@
-# 16 — Makale: 7 sabit aci sentetik composite (polyp mucosa ortasina bindirilmis)
+# 16 — Makale: 7 sentetik composite (polyp mucosa ortasina bindirilmis)
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
 get_ipython().run_line_magic("pip", "install -q opencv-python-headless scipy")
+
+REPO_DIR = Path("/content/g3d")
 
 # ============ AYARLAR ============
 # Her cift: Unity mucosa + ayni acili textured polyp -> TEK bindirilmis goruntu
@@ -17,10 +20,30 @@ COPY_TO_DRIVE = False
 OUT_DIR = Path("/content/paper_angle_composites")
 # ================================
 
-sys.path.insert(0, "/content/g3d")
+sys.path.insert(0, str(REPO_DIR))
 from vrcaps_colab_bootstrap import bootstrap
 
 bootstrap()
+
+_paper_py = REPO_DIR / "captures" / "paper_angle_composites.py"
+if not _paper_py.exists():
+    raise FileNotFoundError(f"Eksik: {_paper_py}\nOnce Bolum 0 calistirin.")
+_paper_src = _paper_py.read_text(encoding="utf-8")
+if "pairs_stacked" in _paper_src or "paper_pairs_strip" in _paper_src:
+    raise RuntimeError(
+        "Eski paper_angle_composites.py — Bolum 0 git pull veya "
+        "!rm -rf /content/g3d sonra Bolum 0."
+    )
+
+_rev = subprocess.run(
+    ["git", "-C", str(REPO_DIR), "log", "-1", "--oneline"],
+    capture_output=True,
+    text=True,
+    check=False,
+)
+if _rev.stdout.strip():
+    print("g3d:", _rev.stdout.strip())
+
 from colab_content_paths import install_sys_path
 
 install_sys_path()
@@ -42,13 +65,24 @@ from unity_dataset_angles import ensure_geometric_gaze_views, print_strip_refere
 def show_outputs(out_dir: Path) -> None:
     from IPython.display import Image, display
 
+    legacy = [
+        out_dir / "paper_pairs_strip_7.png",
+        out_dir / "pairs_stacked",
+    ]
+    for path in legacy:
+        if path.exists():
+            print("UYARI: Eski cikti silinmeli — Bolum 0 + Bolum 8 tekrar calistirin:", path)
+
     strip = out_dir / "paper_composites_strip_7.png"
-    if strip.exists():
-        print("Makale figuru (7 bindirilmis composite yan yana):")
-        display(Image(filename=str(strip), width=1400))
+    if not strip.exists():
+        raise FileNotFoundError(f"Composite strip yok: {strip}")
+    print("Makale figuru (yalnizca bindirilmis 7 composite, yan yana):")
+    display(Image(filename=str(strip), width=1400))
 
     singles = sorted((out_dir / "singles").glob("composite_*.png"))
-    print(f"\nTekil sentetik goruntuler ({len(singles)} adet):")
+    if len(singles) != 7:
+        raise RuntimeError(f"Beklenen 7 composite, bulunan: {len(singles)}")
+    print(f"\nTekil sentetik goruntuler ({len(singles)} adet — polyp mucosa uzerinde):")
     for path in singles:
         print(f"  {path.name}")
         display(Image(filename=str(path), width=520))
