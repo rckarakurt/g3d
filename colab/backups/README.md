@@ -6,4 +6,4 @@
 - `styleshot_texture.py`
 - `12b_style_ref_texture_compare.py`
 
-Yeni notebook: `colab/VRCaps_PLY_DriveFolder_Colab_v2.ipynb`
+**Geri yukleme (2026-07-09):** Repo `VRCaps_PLY_DriveFolder_Colab.ipynb` adina donduruldu; Bolum 3b ve v2 kaldirildi. Bu klasor arsiv olarak duruyor.
