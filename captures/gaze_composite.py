@@ -38,6 +38,56 @@ from coating_utils import export_trajectory_mp4, lab_color_match_polyp  # noqa: 
 from turntable_render import unity_plane_to_bank_az  # noqa: E402
 
 
+def infer_bank_step_deg(bank_az: list[float]) -> float:
+    if len(bank_az) < 2:
+        return 5.0
+    diffs = np.diff(np.sort(np.asarray(bank_az, dtype=np.float64)))
+    diffs = diffs[diffs > 0.05]
+    return float(np.median(diffs)) if len(diffs) else 5.0
+
+
+def snap_bank_azimuth(az_deg: float, bank_az: list[float]) -> float:
+    """Snap to view-bank grid (same 5°/15° steps as export_angle_strip targets)."""
+    if not bank_az or not np.isfinite(az_deg):
+        return float(az_deg)
+    step = infer_bank_step_deg(bank_az)
+    snapped = float(round(float(az_deg) / step) * step)
+    snapped = float(np.clip(snapped, min(bank_az), max(bank_az)))
+    return min(bank_az, key=lambda a: abs(a - snapped))
+
+
+def lookup_bank_azimuth(bank_az: list[float], az_deg: float) -> float:
+    if not bank_az:
+        return float(az_deg)
+    return float(min(bank_az, key=lambda a: abs(a - float(az_deg))))
+
+
+def lookup_bank_file(bank_files: dict[float, Path], bank_az: list[float], az_deg: float) -> Path:
+    key = lookup_bank_azimuth(bank_az, az_deg)
+    if key in bank_files:
+        return bank_files[key]
+    nearest = min(bank_files.keys(), key=lambda k: abs(k - key))
+    return bank_files[nearest]
+
+
+def resolve_frame_bank_az(row: dict, *, allow_legacy: bool = False) -> tuple[float, float]:
+    """Return (view_bank_az_deg, view_bank_az_raw_deg) for compositing."""
+    bank = float(row.get("view_bank_az_deg", float("nan")))
+    raw = float(row.get("view_bank_az_raw_deg", float("nan")))
+    if np.isfinite(bank):
+        return bank, raw if np.isfinite(raw) else float("nan")
+
+    if allow_legacy and np.isfinite(float(row.get("view_plane_deg", float("nan")))):
+        legacy = unity_plane_to_bank_az(float(row["view_plane_deg"]))
+        return legacy, float("nan")
+
+    frame = int(float(row.get("frame", -1)))
+    raise ValueError(
+        f"Frame {frame}: view_bank_az_deg eksik/NaN. "
+        "Colab'da ensure_geometric_gaze_views(dataset, force=True) calistirin."
+    )
+
+
 def load_rgba(path: Path) -> np.ndarray:
     img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if img is None:
@@ -390,6 +440,7 @@ def composite_dataset(
     smooth_distance: bool = True,
     smooth_anchor: bool = False,
     bank_blend: bool = True,
+    strict_bank_snap: bool | None = None,
     lab_match: bool = True,
     max_frames: int | None = None,
     write_mp4: bool = True,
@@ -403,6 +454,11 @@ def composite_dataset(
     rgb_out = out_dir / "rgb"
     rgb_out.mkdir(parents=True, exist_ok=True)
 
+    if strict_bank_snap is None:
+        strict_bank_snap = not smooth_angles
+    if strict_bank_snap:
+        bank_blend = False
+
     manifest_path = view_bank_dir / "view_manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"View bank manifest missing: {manifest_path}")
@@ -411,9 +467,24 @@ def composite_dataset(
 
     bank_az = sorted(float(v["azimuth_deg"]) for v in bank_manifest["views"])
     bank_files = {float(v["azimuth_deg"]): view_bank_dir / v["file"] for v in bank_manifest["views"]}
+    bank_step = infer_bank_step_deg(bank_az)
     for az, path in bank_files.items():
         if not path.exists():
             raise FileNotFoundError(f"Missing view bank image: {path}")
+
+    gaze_rows = load_gaze_rows(dataset_dir)
+    if not gaze_rows or "view_bank_az_deg" not in gaze_rows[0]:
+        raise ValueError(
+            "gaze_views.csv'de view_bank_az_deg yok. "
+            "ensure_geometric_gaze_views(dataset, force=True) calistirin."
+        )
+
+    try:
+        from unity_dataset_angles import print_strip_reference_mapping
+
+        print_strip_reference_mapping(dataset_dir)
+    except ImportError:
+        pass
 
     cam = load_camera(dataset_dir)
     fx = float(cam["fx"])
@@ -421,7 +492,7 @@ def composite_dataset(
     cy_default = float(cam["cy"])
 
     traj_rows = prepare_trajectory_rows(
-        load_gaze_rows(dataset_dir),
+        gaze_rows,
         gazing_only=gazing_only,
         smooth_window=smooth_window,
         smooth_angles=smooth_angles,
@@ -439,7 +510,8 @@ def composite_dataset(
     if write_debug:
         debug_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Angle match: {len(bank_az)} bank views, span {bank_az[0]:.0f}..{bank_az[-1]:.0f}")
+    print(f"Angle match: {len(bank_az)} bank views, span {bank_az[0]:.0f}..{bank_az[-1]:.0f}, step~{bank_step:.0f}°")
+    print(f"  strict_bank_snap={strict_bank_snap}  bank_blend={bank_blend}")
     if traj_rows:
         if "view_bank_az_deg" in traj_rows[0]:
             vp0 = float(traj_rows[0].get("view_bank_az_deg", 0))
@@ -464,15 +536,9 @@ def composite_dataset(
             continue
 
         unity_rgb = cv2.cvtColor(cv2.imread(str(rgb_path)), cv2.COLOR_BGR2RGB)
-        if "view_bank_az_deg" in row and np.isfinite(float(row.get("view_bank_az_deg", float("nan")))):
-            view_plane = float(row["view_bank_az_deg"])
-            view_bank_az = view_plane
-            view_bank_az_raw = float(row.get("view_bank_az_raw_deg", float("nan")))
-        else:
-            view_plane_raw = float(row.get("view_plane_deg", float("nan")))
-            view_plane = unity_plane_to_bank_az(view_plane_raw)
-            view_bank_az = view_plane
-            view_bank_az_raw = float("nan")
+        view_bank_az, view_bank_az_raw = resolve_frame_bank_az(row, allow_legacy=False)
+        match_az = snap_bank_azimuth(view_bank_az, bank_az) if strict_bank_snap else view_bank_az
+        view_plane = view_bank_az
 
         distance_m = float(row.get("distance_m", float("nan")))
         if global_scale and np.isfinite(global_distance_m):
@@ -485,9 +551,9 @@ def composite_dataset(
             scale_boost=scale_boost,
         )
 
-        if bank_blend:
+        if bank_blend and not strict_bank_snap:
             patch_scaled, az_lo, az_hi, w_hi = build_interpolated_patch(
-                view_plane,
+                match_az,
                 bank_az,
                 bank_files,
                 target_d,
@@ -495,10 +561,13 @@ def composite_dataset(
             )
             bank_az_pick = az_lo if w_hi < 0.5 else az_hi
         else:
-            az_lo = az_hi = min(bank_az, key=lambda az: abs(az - view_plane))
+            az_lo = az_hi = lookup_bank_azimuth(bank_az, match_az)
             w_hi = 0.0
             bank_az_pick = az_lo
-            patch_scaled = resize_patch_rgba(load_rgba(bank_files[bank_az_pick]), target_d)
+            patch_scaled = resize_patch_rgba(
+                load_rgba(lookup_bank_file(bank_files, bank_az, az_lo)),
+                target_d,
+            )
 
         anchor_u = float(row.get("anchor_u", cx_default))
         anchor_v = float(row.get("anchor_v", cy_default))
@@ -533,6 +602,8 @@ def composite_dataset(
                 "frame": frame,
                 "view_bank_az_deg": view_bank_az,
                 "view_bank_az_raw_deg": view_bank_az_raw,
+                "bank_az_match_deg": match_az,
+                "bank_az_snapped_deg": bank_az_pick,
                 "view_plane_deg": view_plane,
                 "view_plane_deg_smoothed": smooth_angles,
                 "bank_az_lo_deg": az_lo,
@@ -577,6 +648,8 @@ def composite_dataset(
         "smooth_angles": smooth_angles,
         "smooth_distance": smooth_distance,
         "bank_blend": bank_blend,
+        "strict_bank_snap": strict_bank_snap,
+        "bank_step_deg": bank_step,
         "write_debug": write_debug,
         "trajectory_mp4": str(mp4_path) if mp4_path else None,
     }

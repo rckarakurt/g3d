@@ -17,7 +17,7 @@ SCALE_BOOST = 8.0
 STRICT_ANGLE_MATCH = True   # True: kare bazli aci (yumusatma yok)
 BANK_BLEND = True           # 5° arasi iki mesh gorunumu karistir
 GLOBAL_SCALE = True
-FORCE_GAZE_EXPORT = False   # True: gaze_views.csv yeniden uret
+FORCE_GAZE_EXPORT = True    # True: gaze_views.csv her zaman yeniden uret (Drive eski CSV icin)
 
 SMOOTH_WINDOW = 5           # STRICT=False ise
 MAX_FRAMES = None           # test: 20
@@ -57,7 +57,7 @@ from colab_content_paths import (
     resolve_view_bank,
     sync_dataset_from_drive,
 )
-from unity_dataset_angles import ensure_geometric_gaze_views
+from unity_dataset_angles import ensure_geometric_gaze_views, print_strip_reference_mapping
 import importlib
 import gaze_composite as _gaze_composite
 
@@ -109,12 +109,9 @@ dataset = ensure_dataset_on_content()
 view_bank = resolve_view_bank()
 require_view_bank(view_bank)
 
-gaze_csv = dataset / "poses" / "gaze_views.csv"
-if not gaze_csv.exists() or FORCE_GAZE_EXPORT:
-    print("gaze_views.csv uretiliyor (geometric + Colab bank az)...")
-    ensure_geometric_gaze_views(dataset, write_plot=False, force=FORCE_GAZE_EXPORT)
-else:
-    ensure_geometric_gaze_views(dataset, write_plot=False)
+print("\n=== Gaze CSV (geometric + Colab bank az) ===")
+ensure_geometric_gaze_views(dataset, write_plot=False, force=FORCE_GAZE_EXPORT)
+print_strip_reference_mapping(dataset)
 
 if GAZE_COMPOSITE_OUT.exists():
     shutil.rmtree(GAZE_COMPOSITE_OUT)
