@@ -22,6 +22,7 @@ colab/orbit_coating/colab_content_paths.py
 colab/orbit_coating/colab_net.py
 colab/orbit_coating/coating_utils.py
 colab/orbit_coating/drive_ply_fetch.py
+colab/orbit_coating/drive_style_refs.py
 colab/orbit_coating/medical_utils.py
 colab/orbit_coating/mesh_render.py
 colab/orbit_coating/mesh_uv.py
