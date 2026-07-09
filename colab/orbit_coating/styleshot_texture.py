@@ -11,12 +11,9 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from dataclasses import dataclass
-
 from styleshot_helpers import build_control_image, generate_syn, init_styleshot
 
 STYLE_REF_CACHE = Path("/content/vrcaps_checkpoints/kvasir_style_ref.jpg")
-DRIVE_VRCAPS = Path("/content/drive/MyDrive/vrcaps")
 KVASIR_ZIP_URL = "https://datasets.simula.no/downloads/kvasir-seg.zip"
 KVASIR_ZIP = Path("/content/kvasir-seg.zip")
 
@@ -188,50 +185,26 @@ def render_vertex_color(
     return rgb, mask, depth
 
 
-@dataclass
-class TextureSession:
-    """Paylasilan StyleShot oturumu — ayni mesh kontrolu ile birden fazla stil ref."""
-
-    styleshot: object
-    detector: object
-    content_ckpt: str | None
-    style_ckpt: str
-    control: Image.Image
-
-
-def resolve_style_ref_path(style_ref: Path | str) -> Path:
-    """Verilen stil referans yolunu dogrula."""
-    path = Path(style_ref)
-    if path.exists() and path.stat().st_size > 1_000:
-        return path
-    raise FileNotFoundError(f"Stil referansi bulunamadi: {path}")
-
-
-def resolve_drive_style_ref(stem: str, drive_vrcaps: Path | None = None) -> Path:
-    """Drive/vrcaps altinda stil referansi (drive_style_refs modulu)."""
-    from drive_style_refs import resolve_drive_style_ref as _resolve
-
-    return _resolve(stem, drive_vrcaps)
-
-
-def open_texture_session(
+def generate_uv_texture(
     vertices: np.ndarray,
     faces: np.ndarray,
     colors: np.ndarray,
     *,
-    use_content_encoder: bool = False,
+    out_size: int = 2048,
+    seed: int = 42,
+    prompt: str = DEFAULT_PROMPT,
     controlnet_scale: float = 0.55,
+    use_content_encoder: bool = False,
     control_size: int = 512,
     elevation_deg: float = 18.0,
-    drive_vrcaps: Path | None = None,
-) -> TextureSession:
-    """Mesh kontrol haritasini bir kez uret; birden fazla stil ref icin yeniden kullan."""
+) -> tuple[np.ndarray, dict]:
+    """StyleShot ile UV atlas dokusu uret."""
     from ply_loader import mesh_bounds_radius
     from turntable_render import align_polyp_to_wall, pinhole_intrinsics, polyp_gaze_target, wall_orbit_camera
 
-    drive = Path(drive_vrcaps or DRIVE_VRCAPS)
+    style_ref = ensure_style_ref()
     styleshot, detector, content_ckpt, style_ckpt, _pipe = init_styleshot(
-        drive_vrcaps=drive,
+        drive_vrcaps=Path("/content/drive/MyDrive/vrcaps"),
         use_content_encoder=use_content_encoder,
         controlnet_scale=controlnet_scale,
     )
@@ -249,6 +222,7 @@ def open_texture_session(
     if mask.max() == 0:
         raise RuntimeError("Kontrol renderi bos — mesh/kamera ayarini kontrol edin.")
 
+    style_img = Image.open(style_ref).convert("RGB")
     control = build_control_image(
         rgb,
         depth,
@@ -256,196 +230,28 @@ def open_texture_session(
         detector,
         content_ckpt,
     )
-    return TextureSession(
-        styleshot=styleshot,
-        detector=detector,
-        content_ckpt=str(content_ckpt) if content_ckpt else None,
-        style_ckpt=style_ckpt,
-        control=control,
-    )
-
-
-def _resize_texture(syn: np.ndarray, out_size: int) -> np.ndarray:
-    if syn.shape[0] == out_size and syn.shape[1] == out_size:
-        return syn
-    return np.array(
-        Image.fromarray(syn).resize((out_size, out_size), Image.Resampling.LANCZOS),
-        dtype=np.uint8,
-    )
-
-
-def generate_uv_texture(
-    vertices: np.ndarray,
-    faces: np.ndarray,
-    colors: np.ndarray,
-    *,
-    style_ref: Path | str | None = None,
-    session: TextureSession | None = None,
-    out_size: int = 2048,
-    seed: int = 42,
-    prompt: str = DEFAULT_PROMPT,
-    controlnet_scale: float = 0.55,
-    use_content_encoder: bool = False,
-    control_size: int = 512,
-    elevation_deg: float = 18.0,
-) -> tuple[np.ndarray, dict]:
-    """StyleShot ile UV atlas dokusu uret."""
-    if session is None:
-        session = open_texture_session(
-            vertices,
-            faces,
-            colors,
-            use_content_encoder=use_content_encoder,
-            controlnet_scale=controlnet_scale,
-            control_size=control_size,
-            elevation_deg=elevation_deg,
-        )
-
-    ref_path = resolve_style_ref_path(style_ref) if style_ref else ensure_style_ref()
-    style_img = Image.open(ref_path).convert("RGB")
     syn = generate_syn(
-        session.styleshot,
+        styleshot,
         style_img,
-        session.control,
+        control,
         prompt,
         seed=seed,
         controlnet_scale=controlnet_scale,
     )
-    syn_full = _resize_texture(syn, out_size)
+
+    if syn.shape[0] != out_size or syn.shape[1] != out_size:
+        syn = np.array(
+            Image.fromarray(syn).resize((out_size, out_size), Image.Resampling.LANCZOS),
+            dtype=np.uint8,
+        )
 
     meta = {
-        "style_encoder": session.style_ckpt,
-        "style_ref": str(ref_path),
-        "content_encoder": session.content_ckpt,
+        "style_encoder": style_ckpt,
+        "style_ref": str(style_ref),
+        "content_encoder": str(content_ckpt) if content_ckpt else None,
         "seed": seed,
         "prompt": prompt,
         "controlnet_scale": controlnet_scale,
         "control_size": control_size,
-        "preview_size": int(syn.shape[0]),
     }
-    return syn_full, meta
-
-
-def _load_rgb(path: Path) -> np.ndarray:
-    bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
-    if bgr is None:
-        raise FileNotFoundError(f"Gorsel okunamadi: {path}")
-    return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-
-
-def _resize_square(rgb: np.ndarray, size: int) -> np.ndarray:
-    return np.array(
-        Image.fromarray(rgb).resize((size, size), Image.Resampling.LANCZOS),
-        dtype=np.uint8,
-    )
-
-
-def build_style_ref_comparison_strip(
-    panels: list[tuple[str, np.ndarray]],
-    *,
-    panel_size: int = 512,
-    gap: int = 12,
-    label_height: int = 36,
-) -> np.ndarray:
-    """Yan yana karsilastirma: ref | uretim | ref | uretim."""
-    tiles: list[np.ndarray] = []
-    for label, rgb in panels:
-        tile = _resize_square(rgb, panel_size)
-        banner = np.full((label_height, panel_size, 3), 24, dtype=np.uint8)
-        cv2.putText(
-            banner,
-            label,
-            (8, label_height - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            (235, 235, 235),
-            1,
-            cv2.LINE_AA,
-        )
-        tiles.append(np.vstack([tile, banner]))
-
-    if not tiles:
-        raise ValueError("Karsilastirma paneli bos")
-
-    row_h = tiles[0].shape[0]
-    sep = np.full((row_h, gap, 3), 32, dtype=np.uint8)
-    out = tiles[0]
-    for tile in tiles[1:]:
-        out = np.hstack([out, sep, tile])
-    return out
-
-
-def compare_style_refs(
-    vertices: np.ndarray,
-    faces: np.ndarray,
-    colors: np.ndarray,
-    style_refs: list[tuple[str, Path | str]],
-    out_dir: Path,
-    *,
-    out_size: int = 2048,
-    panel_size: int = 512,
-    seed: int = 42,
-    prompt: str = DEFAULT_PROMPT,
-    controlnet_scale: float = 0.55,
-    use_content_encoder: bool = False,
-    elevation_deg: float = 18.0,
-) -> dict:
-    """Her stil referansi icin doku uret; 4-panel karsilastirma strip kaydet."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    session = open_texture_session(
-        vertices,
-        faces,
-        colors,
-        use_content_encoder=use_content_encoder,
-        controlnet_scale=controlnet_scale,
-        elevation_deg=elevation_deg,
-    )
-
-    panels: list[tuple[str, np.ndarray]] = []
-    results: list[dict] = []
-
-    for label, ref in style_refs:
-        ref_path = resolve_style_ref_path(ref)
-        ref_rgb = _load_rgb(ref_path)
-        texture, meta = generate_uv_texture(
-            vertices,
-            faces,
-            colors,
-            style_ref=ref_path,
-            session=session,
-            out_size=out_size,
-            seed=seed,
-            prompt=prompt,
-            controlnet_scale=controlnet_scale,
-            use_content_encoder=use_content_encoder,
-            elevation_deg=elevation_deg,
-        )
-
-        tex_name = f"texture_{label}.png"
-        tex_path = out_dir / tex_name
-        cv2.imwrite(str(tex_path), cv2.cvtColor(texture, cv2.COLOR_RGB2BGR))
-        meta["texture_file"] = tex_name
-        results.append(meta)
-
-        panels.append((ref_path.name, ref_rgb))
-        panels.append((f"{ref_path.stem} → texture", texture))
-
-    strip = build_style_ref_comparison_strip(panels, panel_size=panel_size)
-    strip_path = out_dir / "style_ref_comparison_strip.png"
-    cv2.imwrite(str(strip_path), cv2.cvtColor(strip, cv2.COLOR_RGB2BGR))
-
-    summary = {
-        "strip": str(strip_path),
-        "panel_size": panel_size,
-        "out_size": out_size,
-        "seed": seed,
-        "prompt": prompt,
-        "results": results,
-    }
-    (out_dir / "style_ref_comparison.json").write_text(
-        __import__("json").dumps(summary, indent=2),
-        encoding="utf-8",
-    )
-    return summary
+    return syn, meta

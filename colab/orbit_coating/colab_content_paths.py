@@ -70,19 +70,7 @@ GAZE_OUT_DRIVE = DRIVE_ROOT / "gaze_out"
 
 
 def drive_mounted() -> bool:
-    return Path("/content/drive").is_dir()
-
-
-def ensure_drive_mounted(*, force_remount: bool = False) -> Path:
-    from drive_style_refs import ensure_drive_mounted as _ensure
-
-    return _ensure(force_remount=force_remount)
-
-
-def resolve_drive_vrcaps_root(*, mount: bool = True) -> Path:
-    from drive_style_refs import resolve_drive_vrcaps_root as _resolve
-
-    return _resolve(mount=mount)
+    return Path("/content/drive").exists()
 
 
 def resolve_unity_dataset() -> Path:
