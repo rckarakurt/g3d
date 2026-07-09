@@ -1,4 +1,4 @@
-"""Generate VRCaps_PLY_DriveFolder_Colab.ipynb — GitHub clone + gaze pipeline."""
+"""Generate VRCaps_PLY_DriveFolder_Colab_v2.ipynb — GitHub clone + gaze pipeline."""
 
 from __future__ import annotations
 
@@ -125,8 +125,8 @@ Varsayilan ciktilar **`/content`** — Drive yalnizca `COPY_TO_DRIVE = True` ile
     }
 
     for out in (
-        ROOT / "VRCaps_PLY_DriveFolder_Colab.ipynb",
-        ROOT / "colab_drive_pack" / "VRCaps_PLY_DriveFolder_Colab.ipynb",
+        ROOT / "VRCaps_PLY_DriveFolder_Colab_v2.ipynb",
+        ROOT / "colab_drive_pack" / "VRCaps_PLY_DriveFolder_Colab_v2.ipynb",
     ):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(nb, indent=1), encoding="utf-8")
