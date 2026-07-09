@@ -52,6 +52,17 @@ def plane_angle_from_row(row: dict) -> float:
     return az360 if az360 <= 180.0 else 360.0 - az360
 
 
+def bank_angle_from_row(row: dict) -> float:
+    """Colab-aligned view bank azimuth (-90..+90), preferred for matching."""
+    az = float(row.get("view_bank_az_deg", float("nan")))
+    if np.isfinite(az):
+        return az
+    plane = plane_angle_from_row(row)
+    if np.isfinite(plane):
+        return float(plane) - 90.0
+    return float("nan")
+
+
 def plane_tilt_from_row(row: dict) -> float:
     if row.get("view_tilt_deg"):
         value = float(row["view_tilt_deg"])
@@ -114,6 +125,7 @@ def draw_anchor_overlay(
     center_v: float,
     anchor_disk_radius_px: float | None = None,
     azimuth_deg: float | None = None,
+    bank_az_deg: float | None = None,
 ) -> np.ndarray:
     out = bgr.copy()
     h, w = out.shape[:2]
@@ -129,12 +141,18 @@ def draw_anchor_overlay(
 
     gauge_cx = w - 95
     gauge_cy = h - 28
-    draw_plane_gauge(out, center=(gauge_cx, gauge_cy), radius=70, angle_deg=plane_deg)
+    if bank_az_deg is not None and np.isfinite(bank_az_deg):
+        gauge_deg = float(bank_az_deg) + 90.0
+    else:
+        gauge_deg = plane_deg
+    draw_plane_gauge(out, center=(gauge_cx, gauge_cy), radius=70, angle_deg=gauge_deg)
 
     plane_text = f"{plane_deg:.1f}" if np.isfinite(plane_deg) else "?"
+    bank_text = f"{bank_az_deg:+.1f}" if bank_az_deg is not None and np.isfinite(bank_az_deg) else "?"
     tilt_text = f"{tilt_deg:.1f}" if np.isfinite(tilt_deg) else "?"
     lines = [
         f"frame {frame:03d}",
+        f"bank: {bank_text} deg  (-90..+90)",
         f"plane: {plane_text} deg  (0-180)",
         f"tilt: {tilt_text} deg",
     ]
@@ -151,7 +169,7 @@ def draw_anchor_overlay(
 
     cv2.putText(
         out,
-        f"{plane_text}",
+        bank_text if bank_text != "?" else plane_text,
         (gauge_cx - 28, gauge_cy - 82),
         cv2.FONT_HERSHEY_SIMPLEX,
         1.1,
@@ -221,6 +239,7 @@ def export_marked_rgb(
         u = float(row["anchor_u"])
         v = float(row["anchor_v"])
         plane_deg = plane_angle_from_row(row)
+        bank_az = bank_angle_from_row(row)
         tilt_deg = plane_tilt_from_row(row)
         err = float(row.get("ray_dev_deg", row.get("gaze_error_deg", 0)))
         reproj = float(row.get("reproj_error_px", float("nan")))
@@ -239,9 +258,10 @@ def export_marked_rgb(
             center_u=center_u,
             center_v=center_v,
             anchor_disk_radius_px=anchor_disk_px(0.0),
+            bank_az_deg=bank_az,
         )
 
-        plane_i = int(round(plane_deg)) if np.isfinite(plane_deg) else 0
+        bank_i = int(round(bank_az)) if np.isfinite(bank_az) else 0
         out_name = f"{frame:06d}.png"
         out_path = rgb_out_dir / out_name
         save_rgb_png(out_path, marked)
@@ -251,9 +271,10 @@ def export_marked_rgb(
                 "frame": frame,
                 "rgb": f"rgb/{out_name}",
                 "output": out_name,
-                "label": f"frame_{frame:06d}_plane{plane_i:03d}",
+                "label": f"frame_{frame:06d}_bank{bank_i:+04d}",
                 "anchor_u": u,
                 "anchor_v": v,
+                "view_bank_az_deg": bank_az,
                 "view_plane_deg": plane_deg,
                 "view_tilt_deg": tilt_deg,
                 "view_azimuth_deg": float(row.get("view_azimuth_deg", float("nan"))),

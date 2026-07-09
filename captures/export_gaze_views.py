@@ -20,9 +20,18 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from anchor_from_rays import (
+    aggregate_mucosa_normal,
+    bank_azimuth_from_orbit,
+    bank_azimuth_geometric,
+    bank_azimuths_for_poses,
+    bank_azimuths_geometric,
+    build_geometric_bank_basis,
+    colab_bank_az_from_geometric,
+    compute_center_ray_gaze,
     find_anchor_robust,
     load_positions_and_forwards,
     load_pose_rows as load_ray_pose_rows,
+    orbit_angle_at_pos,
     per_frame_orbit_angle,
     resolve_forward_local,
     theta_to_half_circle_deg,
@@ -299,6 +308,9 @@ def export_gaze_views(
     anchor_inlier_radius_m: float = DEFAULT_ANCHOR_INLIER_RADIUS_M,
     anchor_patch_radius_px: int = DEFAULT_ANCHOR_PATCH_RADIUS_PX,
     anchor_prefilter_deg: float = DEFAULT_ANCHOR_PREFILTER_DEG,
+    reference_frame: int | None = None,
+    reference_method: str = "crosshair_orbit",
+    angle_method: str = "geometric",
     write_plot: bool = False,
 ) -> dict:
     dataset_dir = dataset_dir.resolve()
@@ -355,13 +367,53 @@ def export_gaze_views(
         ray_rows, frame_start=frame_start
     )
     _, forwards, _ = resolve_forward_local(positions, forwards)
-    anchor_pos, _ray_inlier_mask, ray_dev_all = find_anchor_robust(
+    anchor_pos, ray_inlier_mask, ray_dev_all = find_anchor_robust(
         positions,
         forwards,
         max_dev_deg=anchor_prefilter_deg,
     )
     orbit_theta, plane_normal, u_axis, v_axis = per_frame_orbit_angle(positions, anchor_pos)
     orbit_theta_180 = theta_to_half_circle_deg(orbit_theta)
+
+    reproj_by_frame: dict[int, float] = {}
+    for row, focus in zip(pose_rows, per_frame_focus):
+        frame = int(float(row["frame"]))
+        if focus is None:
+            continue
+        c2w = pose_to_c2w(row)
+        proj_u, proj_v, _ = project_world_point(focus, c2w, k)
+        reproj_by_frame[frame] = float(np.hypot(proj_u - cx, proj_v - cy))
+
+    mucosa_normal = aggregate_mucosa_normal(
+        [rec["normal"] for rec in calibration_records],
+        anchor_pos,
+        positions,
+    )
+
+    if angle_method == "geometric":
+        bank_az_all, bank_meta = bank_azimuths_geometric(
+            anchor_pos, positions, mucosa_normal
+        )
+        geo_basis = build_geometric_bank_basis(anchor_pos, positions, mucosa_normal)
+        geo_front = geo_basis["front"]
+        geo_right = geo_basis["right"]
+        geo_axis = geo_basis["orbit_axis"]
+        ref_orbit_deg = None
+    else:
+        bank_az_all, bank_meta = bank_azimuths_for_poses(
+            anchor_pos,
+            positions,
+            forwards,
+            u_axis,
+            v_axis,
+            ray_frame_ids,
+            orbit_theta,
+            reproj_errors=reproj_by_frame,
+            reference_frame=reference_frame,
+            reference_method=reference_method,
+        )
+        geo_front = geo_right = geo_axis = None
+        ref_orbit_deg = float(bank_meta["reference_orbit_deg"])
     ray_frame_map = {fid: i for i, fid in enumerate(ray_frame_ids)}
 
     anchor_normal = plane_normal / max(np.linalg.norm(plane_normal), 1e-8)
@@ -378,7 +430,9 @@ def export_gaze_views(
         image_name = row.get("image_name", f"image_{frame:04d}.png")
         c2w = pose_to_c2w(row)
         look = get_look_vector(row)
-        cam_pos = c2w[:3, 3]
+        cam_pos = np.array(
+            [float(row["tX"]), float(row["tY"]), float(row["tZ"])], dtype=np.float64
+        )
 
         to_global = anchor_pos - cam_pos
         distance_m = float(np.linalg.norm(to_global))
@@ -392,6 +446,22 @@ def export_gaze_views(
         view_plane_deg = float("nan")
         view_tilt_deg = float("nan")
         ray_dev_deg = float("nan")
+        if angle_method == "geometric" and geo_front is not None:
+            view_bank_az_raw_deg = float(
+                bank_azimuth_geometric(
+                    cam_pos, anchor_pos, geo_front, geo_right, geo_axis
+                )
+            )
+            view_bank_az_deg = colab_bank_az_from_geometric(view_bank_az_raw_deg)
+        else:
+            view_bank_az_deg = float(
+                bank_azimuth_from_orbit(
+                    cam_pos, anchor_pos, u_axis, v_axis, ref_orbit_deg
+                )
+            )
+            view_bank_az_raw_deg = float(
+                orbit_angle_at_pos(cam_pos, anchor_pos, u_axis, v_axis)
+            )
         if frame in ray_frame_map:
             ri = ray_frame_map[frame]
             view_azimuth_deg = float(orbit_theta[ri])
@@ -414,20 +484,23 @@ def export_gaze_views(
         global_reproj_error_px = float(np.hypot(global_anchor_u - cx, global_anchor_v - cy))
 
         gaze_error_deg = angle_between_deg(look, to_global)
+        center_ray_error_deg, _ = compute_center_ray_gaze(anchor_pos, cam_pos, look)
+        if not np.isfinite(center_ray_error_deg):
+            center_ray_error_deg = gaze_error_deg
         focus_drift_m = float("nan")
-        center_ray_error_deg = float("nan")
         if focus is not None:
             focus_drift_m = float(np.linalg.norm(focus - anchor_pos))
-            center_ray_error_deg = angle_between_deg(look, focus - cam_pos)
+            patch_ray_err = angle_between_deg(look, focus - cam_pos)
+            if np.isfinite(patch_ray_err):
+                center_ray_error_deg = patch_ray_err
 
         has_focus = focus is not None
         in_image = True
         is_gazing = (
             frame >= frame_start
-            and frame in ray_frame_map
-            and np.isfinite(ray_dev_deg)
-            and ray_dev_deg <= gaze_threshold_deg
             and has_focus
+            and np.isfinite(gaze_error_deg)
+            and gaze_error_deg <= gaze_threshold_deg
             and in_image
         )
         if is_gazing:
@@ -449,6 +522,8 @@ def export_gaze_views(
             "view_elevation_deg": view_elevation_deg,
             "view_plane_az_deg": view_plane_az_deg,
             "view_plane_deg": view_plane_deg,
+            "view_bank_az_deg": view_bank_az_deg,
+            "view_bank_az_raw_deg": view_bank_az_raw_deg,
             "view_tilt_deg": view_tilt_deg,
             "gaze_error_deg": gaze_error_deg,
             "ray_dev_deg": ray_dev_deg,
@@ -486,12 +561,14 @@ def export_gaze_views(
         "anchor_normal": anchor_normal.tolist(),
         "tangent": tangent.tolist(),
         "bitangent": bitangent.tolist(),
-        "anchor_mode": "screen_center_image + ray_3d_angles",
+        "anchor_mode": f"screen_center_image + {angle_method}_bank_az",
         "anchor_note": (
-            "anchor_u/v = image center (crosshair) — composite placement. "
-            "anchor_pos 3D = Unity ray intersection (view_plane_deg only). "
-            "reproj_error_px = depth patch vs center; global_reproj = ray 3D vs center."
+            "anchor_u/v = image center (crosshair). anchor_pos = ray intersection. "
+            "geometric: theta=atan2((C-A)·r,(C-A)·f) with f from mucosa normal, no reference frame."
         ),
+        "angle_method": angle_method,
+        "mucosa_normal": mucosa_normal.tolist(),
+        "bank_meta": bank_meta,
         "gaze_threshold_deg": gaze_threshold_deg,
         "frame_start": frame_start,
         "anchor_inlier_radius_m": anchor_inlier_radius_m,
@@ -618,6 +695,24 @@ def main() -> None:
         help="Max look vs center-ray angle for anchor calibration frames",
     )
     parser.add_argument(
+        "--angle-method",
+        choices=("geometric", "reference"),
+        default="geometric",
+        help="geometric = referanssiz mukoza-normal formulu (default); reference = referans kare",
+    )
+    parser.add_argument(
+        "--reference-frame",
+        type=int,
+        default=None,
+        help="Sadece --angle-method reference: 0 deg referans kare",
+    )
+    parser.add_argument(
+        "--reference-method",
+        choices=("crosshair_orbit", "frontal", "midpoint"),
+        default="crosshair_orbit",
+        help="Referans kare secimi (--angle-method reference)",
+    )
+    parser.add_argument(
         "--plot",
         action="store_true",
         help="Write trajectory/gaze_analysis.png (off by default)",
@@ -631,14 +726,23 @@ def main() -> None:
         anchor_inlier_radius_m=args.anchor_inlier_radius_m,
         anchor_patch_radius_px=args.anchor_patch_radius_px,
         anchor_prefilter_deg=args.anchor_prefilter_deg,
+        reference_frame=args.reference_frame,
+        reference_method=args.reference_method,
+        angle_method=args.angle_method,
         write_plot=args.plot,
     )
     print(f"Gaze export: {args.dataset / 'poses' / 'gaze_views.csv'}")
+    print(f"  angle method: {meta.get('angle_method', 'geometric')}")
     print(f"  frames: {meta['frame_count']}, anchor from frame: {meta['frame_start']}")
     print(f"  anchor calibration frames: {meta['anchor_calibration_frames']}")
     print(f"  anchor prefilter/inlier frames: {meta['anchor_inlier_frames']}/{meta['anchor_calibration_frames']}")
     print(f"  ray_dev_deg_mean: {meta.get('ray_dev_deg_mean', float('nan')):.3f}")
-    print(f"  orbit span (0-180): {meta.get('orbit_theta_span_deg')}")
+    bm = meta.get("bank_meta", {})
+    if meta.get("angle_method") == "reference":
+        print(f"  reference frame (0 deg): {bm.get('reference_frame')}  method={bm.get('reference_method')}")
+    else:
+        print(f"  mucosa normal: {meta.get('mucosa_normal')}")
+    print(f"  bank az span: {bm.get('bank_az_min_deg')} .. {bm.get('bank_az_max_deg')}")
     print(f"  gazing: {meta['gazing_frame_count']}")
     print(f"  focus_std_m: {meta['focus_std_m']:.5f}")
     print(f"  anchor: {meta['anchor_pos']}")

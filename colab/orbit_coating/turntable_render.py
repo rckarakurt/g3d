@@ -28,6 +28,28 @@ def bank_az_to_unity_plane(bank_az_deg: float) -> float:
     return float(bank_az_deg) + UNITY_VIEW_PLANE_OFFSET_DEG
 
 
+def wrap_bank_az_deg(angle_deg: float) -> float:
+    """Wrap to (-180, 180] — same as Unity anchor_from_rays.wrap_angle_deg."""
+    a = float(angle_deg)
+    if not np.isfinite(a):
+        return float("nan")
+    return float((a + 180.0) % 360.0 - 180.0)
+
+
+def colab_bank_az_from_geometric(theta_deg: float) -> float:
+    """Unity geometric orbit azimuth -> Colab view-bank azimuth.
+
+    Colab lumen turntable (``mesh_rotate_y``): camera fixed at +Z, mesh rotates
+    by ``-az`` for bank label ``az``; 0 = frontal (+Z), +90 = right profile (+X).
+
+    Unity geometric ``atan2((C-A)·r, (C-A)·f)`` uses the opposite right-hand
+    orbit sense in the orbit plane, so bank labels are negated for matching.
+    """
+    if not np.isfinite(theta_deg):
+        return float("nan")
+    return wrap_bank_az_deg(-float(theta_deg))
+
+
 def wall_azimuth_grid(step_deg: int = 5, half_span_deg: int = 90) -> list[float]:
     """Dikey (Y) eksen etrafinda -half_span .. +half_span; 0 = on (+Z, duz yuz)."""
     step = max(1, int(step_deg))

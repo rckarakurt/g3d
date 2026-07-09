@@ -1,8 +1,7 @@
-"""Derive polyp view-bank azimuths from Unity gaze_views.csv (view_plane_deg)."""
+"""Derive polyp view-bank azimuths from Unity gaze_views.csv (view_bank_az_deg)."""
 
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
 
@@ -10,9 +9,9 @@ import numpy as np
 
 from turntable_render import (
     bank_az_to_unity_plane,
-    unity_plane_to_bank_az,
     wall_azimuth_grid,
 )
+from unity_dataset_angles import ensure_geometric_gaze_views, load_bank_azimuths
 
 
 def load_view_plane_angles(
@@ -20,21 +19,15 @@ def load_view_plane_angles(
     *,
     gazing_only: bool = True,
     as_bank_az: bool = True,
+    ensure_export: bool = True,
 ) -> list[float]:
-    csv_path = Path(dataset_dir) / "poses" / "gaze_views.csv"
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"gaze_views.csv yok: {csv_path}\n"
-            "Once Unity dataset + Bolum 6 (gaze export) calistirin."
-        )
-    angles: list[float] = []
-    with csv_path.open("r", encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle):
-            if gazing_only and int(row.get("is_gazing", 0)) != 1:
-                continue
-            vp = float(row.get("view_plane_deg", float("nan")))
-            if np.isfinite(vp):
-                angles.append(unity_plane_to_bank_az(vp) if as_bank_az else vp)
+    """Load per-frame bank azimuths (Colab-aligned, geometric export)."""
+    dataset_dir = Path(dataset_dir)
+    if ensure_export:
+        ensure_geometric_gaze_views(dataset_dir, write_plot=False)
+    angles = load_bank_azimuths(dataset_dir, gazing_only=gazing_only)
+    if not as_bank_az:
+        return [a + 90.0 for a in angles]
     return angles
 
 
@@ -64,12 +57,18 @@ def azimuths_from_gaze_dataset(
     half_span_deg: float = 90.0,
     gazing_only: bool = True,
     fill_span: bool = True,
+    ensure_export: bool = True,
 ) -> tuple[list[float], dict]:
     """View bank acilari: -half_span .. +half_span (0 = duz yuz, Y ekseni).
 
-    Unity view_plane_deg (0..180) -> bank az (-90..+90) via -90 offset.
+    Uses geometric ``view_bank_az_deg`` from Unity ``gaze_views.csv``
+    (Colab-aligned: phi = -theta_geometric).
     """
-    bank_angles = load_view_plane_angles(dataset_dir, gazing_only=gazing_only, as_bank_az=True)
+    dataset_dir = Path(dataset_dir)
+    if ensure_export:
+        ensure_geometric_gaze_views(dataset_dir, write_plot=False)
+
+    bank_angles = load_bank_azimuths(dataset_dir, gazing_only=gazing_only)
     span = min(90.0, float(half_span_deg))
     if not bank_angles:
         step = int(bin_deg or 5)
@@ -94,13 +93,16 @@ def azimuths_from_gaze_dataset(
 
     meta = {
         "source": "unity_gaze_views",
-        "dataset_dir": str(Path(dataset_dir).resolve()),
+        "dataset_dir": str(dataset_dir.resolve()),
         "gazing_only": gazing_only,
         "bin_deg": b,
         "half_span_deg": span,
         "fill_span": fill_span,
-        "convention": "bank_az: 0=frontal +Z, Y-axis, -90..+90",
-        "unity_offset_deg": 90.0,
+        "angle_method": "geometric",
+        "convention": (
+            "view_bank_az_deg: geometric orbit az, Colab-aligned (mesh_rotate_y -az)"
+        ),
+        "uses_view_bank_az_deg": True,
         "bank_az_min_deg": lo,
         "bank_az_max_deg": hi_obs,
         "unity_plane_min_deg": bank_az_to_unity_plane(lo),

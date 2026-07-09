@@ -17,7 +17,8 @@
 | **+90°** | Sag yan |
 
 - Sadece **Y ekseni** (dikey), **-90 .. +90**
-- Unity `view_plane_deg` (0..180) otomatik `-90` offset ile eslestirilir
+- Unity dataset: **Bolum 6** `ensure_geometric_gaze_views()` → `view_bank_az_deg` (geometric + Colab hizali)
+- Polyp view bank ayni acilari kullanir (`mesh_rotate_y -az`)
 
 ### Kod guncelleme
 

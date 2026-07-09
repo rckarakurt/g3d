@@ -155,6 +155,435 @@ def theta_to_half_circle_deg(theta: np.ndarray) -> np.ndarray:
     return t
 
 
+def wrap_angle_deg(angle: float) -> float:
+    """Wrap to (-180, 180]."""
+    if not np.isfinite(angle):
+        return float("nan")
+    a = (float(angle) + 180.0) % 360.0 - 180.0
+    return float(a)
+
+
+def fold_bank_azimuth(az_deg: float) -> float:
+    """Orbit duzlemi acisini mesh view bank yarim dairesine (-90..+90) katla."""
+    if not np.isfinite(az_deg):
+        return float("nan")
+    az = wrap_angle_deg(float(az_deg))
+    if az > 90.0:
+        return float(180.0 - az)
+    if az < -90.0:
+        return float(-180.0 - az)
+    return az
+
+
+def bank_azimuth_y_axis(anchor: np.ndarray, cam_pos: np.ndarray) -> float:
+    """View-bank azimuth: Y ekseni (dikey), XZ duzlemi.
+
+    0 = kamera +Z tarafinda (duz yuz), +90 = +X yan, -90 = -X yan.
+    Mesh turntable (mesh_rotate_y) ile ayni konvansiyon.
+    """
+    rel = np.asarray(cam_pos, dtype=np.float64) - np.asarray(anchor, dtype=np.float64)
+    x = float(rel[0])
+    z = float(rel[2])
+    if np.hypot(x, z) < 1e-9:
+        return 0.0
+    return wrap_angle_deg(float(np.degrees(np.arctan2(x, z))))
+
+
+def build_orbit_frame(
+    anchor: np.ndarray,
+    positions: np.ndarray,
+    forwards: np.ndarray,
+    *,
+    inlier_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Orbit duzleminde (front, right, orbit_axis) — mesh Y turntable ile eslesir.
+
+    front: anchor -> frontal kamera (0 deg)
+    right: front x orbit_axis
+    orbit_axis: kapsul yarim daire ekseni (PCA, Unity Y'ye yakin tutulur)
+    """
+    mask = np.ones(len(positions), dtype=bool) if inlier_mask is None else inlier_mask
+    rel = positions - anchor
+    rel_fit = rel[mask] if int(mask.sum()) >= 3 else rel
+
+    _, _, vt = np.linalg.svd(rel_fit, full_matrices=False)
+    u_axis, _v_axis, orbit_axis = vt[0], vt[1], vt[2]
+
+    unity_y = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    if abs(float(np.dot(orbit_axis, unity_y))) < 0.5:
+        # Egik orbit: en kucuk singular vektor yerine en buyuk disi haric tut
+        orbit_axis = vt[2]
+    if float(np.dot(orbit_axis, unity_y)) < 0.0:
+        orbit_axis = -orbit_axis
+
+    ref_cam = pick_frontal_reference_cam(
+        positions, forwards, anchor, inlier_mask=mask
+    )
+    ref_rel = ref_cam - anchor
+    ref_rel = ref_rel - np.dot(ref_rel, orbit_axis) * orbit_axis
+    ref_norm = float(np.linalg.norm(ref_rel))
+    if ref_norm < 1e-9:
+        front = u_axis - np.dot(u_axis, orbit_axis) * orbit_axis
+        front /= max(np.linalg.norm(front), 1e-12)
+    else:
+        front = ref_rel / ref_norm
+
+    right = np.cross(orbit_axis, front)
+    right_norm = float(np.linalg.norm(right))
+    if right_norm < 1e-9:
+        right = u_axis - np.dot(u_axis, orbit_axis) * orbit_axis
+        right /= max(np.linalg.norm(right), 1e-12)
+    else:
+        right = right / right_norm
+
+    front = np.cross(right, orbit_axis)
+    front /= max(np.linalg.norm(front), 1e-12)
+    return front, right, orbit_axis
+
+
+def bank_azimuth_orbit_plane(
+    anchor: np.ndarray,
+    cam_pos: np.ndarray,
+    front: np.ndarray,
+    right: np.ndarray,
+    orbit_axis: np.ndarray,
+) -> float:
+    """Anchor -> kamera vektorunun orbit duzlemindeki acisi (0=frontal)."""
+    rel = np.asarray(cam_pos, dtype=np.float64) - np.asarray(anchor, dtype=np.float64)
+    rel = rel - np.dot(rel, orbit_axis) * orbit_axis
+    x = float(np.dot(rel, right))
+    z = float(np.dot(rel, front))
+    if np.hypot(x, z) < 1e-9:
+        return 0.0
+    return wrap_angle_deg(float(np.degrees(np.arctan2(x, z))))
+
+
+def project_to_plane(vector: np.ndarray, plane_normal: np.ndarray) -> np.ndarray:
+    """v' = v - (v·k)k — vektoru k'ye dik duzleme iz dusur."""
+    k = np.asarray(plane_normal, dtype=np.float64)
+    k = k / max(np.linalg.norm(k), 1e-12)
+    v = np.asarray(vector, dtype=np.float64)
+    return v - float(np.dot(v, k)) * k
+
+
+def estimate_orbit_axis(anchor: np.ndarray, positions: np.ndarray) -> np.ndarray:
+    """Orbit ekseni k: kamera pozisyonlarinin anchor etrafindaki en iyi duzlem normali.
+
+    k = argmin variance of (C_i - A) along direction (smallest SVD axis).
+    """
+    rel = np.asarray(positions, dtype=np.float64) - np.asarray(anchor, dtype=np.float64)
+    if len(rel) < 3:
+        return np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    _, _, vt = np.linalg.svd(rel, full_matrices=False)
+    k = vt[2].astype(np.float64)
+    unity_y = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    if abs(float(np.dot(k, unity_y))) > 0.25:
+        if float(np.dot(k, unity_y)) < 0.0:
+            k = -k
+    norm = float(np.linalg.norm(k))
+    return k / norm if norm > 1e-12 else unity_y
+
+
+def aggregate_mucosa_normal(
+    normals: list[np.ndarray] | np.ndarray,
+    anchor: np.ndarray,
+    positions: np.ndarray,
+) -> np.ndarray:
+    """Mukoza dis normali n: crosshair depth patch normal ortalaması (lumen yonune)."""
+    if isinstance(normals, np.ndarray):
+        n_list = [normals[i] for i in range(len(normals))]
+    else:
+        n_list = list(normals)
+    if not n_list:
+        rel = positions - anchor
+        fallback = np.mean(rel, axis=0)
+        norm = float(np.linalg.norm(fallback))
+        return fallback / norm if norm > 1e-12 else np.array([0.0, 0.0, 1.0])
+
+    lumen_hint = np.mean(positions - anchor, axis=0)
+    lh_norm = float(np.linalg.norm(lumen_hint))
+    if lh_norm > 1e-12:
+        lumen_hint = lumen_hint / lh_norm
+
+    oriented: list[np.ndarray] = []
+    for raw in n_list:
+        n = np.asarray(raw, dtype=np.float64)
+        nn = float(np.linalg.norm(n))
+        if nn < 1e-12:
+            continue
+        n = n / nn
+        if lh_norm > 1e-12 and float(np.dot(n, lumen_hint)) < 0.0:
+            n = -n
+        oriented.append(n)
+    if not oriented:
+        return np.array([0.0, 0.0, 1.0], dtype=np.float64)
+
+    n_mean = np.mean(np.stack(oriented, axis=0), axis=0)
+    nn = float(np.linalg.norm(n_mean))
+    return n_mean / nn if nn > 1e-12 else oriented[0]
+
+
+def build_geometric_bank_basis(
+    anchor: np.ndarray,
+    positions: np.ndarray,
+    mucosa_normal: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Referanssiz orbit bazı: k (orbit ekseni), f (0 deg), r (+90 deg).
+
+    f = normalize(n - (n·k)k)  — mukoza normalinin orbit duzlemine izdusumu
+    r = normalize(k x f)
+    theta = atan2((C-A)·r, (C-A)·f)
+    """
+    k = estimate_orbit_axis(anchor, positions)
+    n = np.asarray(mucosa_normal, dtype=np.float64)
+    n = n / max(float(np.linalg.norm(n)), 1e-12)
+
+    f = project_to_plane(n, k)
+    fn = float(np.linalg.norm(f))
+    if fn < 1e-9:
+        rel_mean = np.mean(positions - anchor, axis=0)
+        f = project_to_plane(rel_mean, k)
+        fn = float(np.linalg.norm(f))
+    f = f / max(fn, 1e-12)
+
+    r = np.cross(k, f)
+    rn = float(np.linalg.norm(r))
+    if rn < 1e-9:
+        r = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    else:
+        r = r / rn
+
+    f = np.cross(r, k)
+    f = f / max(float(np.linalg.norm(f)), 1e-12)
+
+    return {
+        "orbit_axis": k,
+        "front": f,
+        "right": r,
+        "mucosa_normal": n,
+    }
+
+
+def bank_azimuth_geometric(
+    cam_pos: np.ndarray,
+    anchor: np.ndarray,
+    front: np.ndarray,
+    right: np.ndarray,
+    orbit_axis: np.ndarray,
+) -> float:
+    """Referanssiz view-bank azimuth (deg): atan2 uzerinde r, f."""
+    rel = project_to_plane(
+        np.asarray(cam_pos, dtype=np.float64) - np.asarray(anchor, dtype=np.float64),
+        orbit_axis,
+    )
+    x = float(np.dot(rel, right))
+    z = float(np.dot(rel, front))
+    if np.hypot(x, z) < 1e-9:
+        return 0.0
+    return wrap_angle_deg(float(np.degrees(np.arctan2(x, z))))
+
+
+def colab_bank_az_from_geometric(theta_deg: float) -> float:
+    """Unity geometric orbit az -> Colab view-bank az (mesh_rotate_y -az)."""
+    if not np.isfinite(theta_deg):
+        return float("nan")
+    return wrap_angle_deg(-float(theta_deg))
+
+
+def bank_azimuths_geometric(
+    anchor: np.ndarray,
+    positions: np.ndarray,
+    mucosa_normal: np.ndarray,
+    *,
+    colab_aligned: bool = True,
+) -> tuple[np.ndarray, dict]:
+    """Tum pozisyonlar icin referanssiz bank azimuth."""
+    basis = build_geometric_bank_basis(anchor, positions, mucosa_normal)
+    f, r, k = basis["front"], basis["right"], basis["orbit_axis"]
+    bank_raw = np.array(
+        [bank_azimuth_geometric(p, anchor, f, r, k) for p in positions],
+        dtype=np.float64,
+    )
+    bank = (
+        np.array([colab_bank_az_from_geometric(b) for b in bank_raw], dtype=np.float64)
+        if colab_aligned
+        else bank_raw
+    )
+    meta = {
+        "method": "geometric_mucosa_normal",
+        "colab_aligned": bool(colab_aligned),
+        "orbit_axis": k.tolist(),
+        "front_axis": f.tolist(),
+        "right_axis": r.tolist(),
+        "mucosa_normal": basis["mucosa_normal"].tolist(),
+        "bank_az_raw_min_deg": float(np.min(bank_raw)),
+        "bank_az_raw_max_deg": float(np.max(bank_raw)),
+        "bank_az_min_deg": float(np.min(bank)),
+        "bank_az_max_deg": float(np.max(bank)),
+    }
+    return bank, meta
+
+
+def pick_frontal_reference_cam(
+    positions: np.ndarray,
+    forwards: np.ndarray,
+    anchor: np.ndarray,
+    *,
+    inlier_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Orbit referansi: forward en iyi anchor'a hizali kare (duz yuz ~ 0 deg)."""
+    mask = np.ones(len(positions), dtype=bool) if inlier_mask is None else inlier_mask
+    best_idx = None
+    best_align = -2.0
+    for i in range(len(positions)):
+        if not mask[i]:
+            continue
+        to_a = anchor - positions[i]
+        dist = np.linalg.norm(to_a)
+        if dist < 1e-8:
+            continue
+        align = float(np.dot(forwards[i], to_a / dist))
+        if align > best_align:
+            best_align = align
+            best_idx = i
+    if best_idx is None:
+        return positions[0]
+    return positions[int(best_idx)]
+
+
+def orbit_angle_at_pos(
+    cam_pos: np.ndarray,
+    anchor: np.ndarray,
+    u_axis: np.ndarray,
+    v_axis: np.ndarray,
+) -> float:
+    """PCA orbit duzleminde anchor etrafindaki aci (deg)."""
+    rel = np.asarray(cam_pos, dtype=np.float64) - np.asarray(anchor, dtype=np.float64)
+    return float(np.degrees(np.arctan2(float(rel @ v_axis), float(rel @ u_axis))))
+
+
+def pick_reference_frame(
+    frame_ids: list[int],
+    orbit_theta_deg: np.ndarray,
+    *,
+    reproj_errors: dict[int, float] | None = None,
+    positions: np.ndarray | None = None,
+    forwards: np.ndarray | None = None,
+    anchor: np.ndarray | None = None,
+    method: str = "crosshair_orbit",
+    explicit: int | None = None,
+    crosshair_max_px: float = 2.0,
+) -> int:
+    """0 deg referans karesi.
+
+    crosshair_orbit (default): crosshair iyi oturan karelerde orbit acisinin
+    medyanina en yakin frame (~ image_0100 bu dataset icin).
+    """
+    if explicit is not None and int(explicit) in frame_ids:
+        return int(explicit)
+
+    if method == "frontal" and positions is not None and forwards is not None and anchor is not None:
+        ref_cam = pick_frontal_reference_cam(positions, forwards, anchor)
+        for i, p in enumerate(positions):
+            if np.allclose(p, ref_cam):
+                return int(frame_ids[i])
+        return int(frame_ids[0])
+
+    if method == "crosshair_orbit" and reproj_errors:
+        good = [
+            fid
+            for fid in frame_ids
+            if np.isfinite(reproj_errors.get(fid, float("nan")))
+            and float(reproj_errors[fid]) <= crosshair_max_px
+        ]
+        if len(good) >= 3:
+            good_theta = np.array(
+                [float(orbit_theta_deg[frame_ids.index(fid)]) for fid in good],
+                dtype=np.float64,
+            )
+            med = float(np.median(good_theta))
+            return int(
+                min(good, key=lambda fid: abs(float(orbit_theta_deg[frame_ids.index(fid)]) - med))
+            )
+
+    mid = (float(np.min(orbit_theta_deg)) + float(np.max(orbit_theta_deg))) / 2.0
+    return int(frame_ids[int(np.argmin(np.abs(orbit_theta_deg - mid)))])
+
+
+def bank_azimuth_from_orbit(
+    cam_pos: np.ndarray,
+    anchor: np.ndarray,
+    u_axis: np.ndarray,
+    v_axis: np.ndarray,
+    ref_orbit_deg: float,
+) -> float:
+    """view_bank_az: orbit acisi - referans (0 = frontal orbit pozisyonu)."""
+    az = orbit_angle_at_pos(cam_pos, anchor, u_axis, v_axis)
+    return wrap_angle_deg(az - float(ref_orbit_deg))
+
+
+def bank_azimuths_for_poses(
+    anchor: np.ndarray,
+    positions: np.ndarray,
+    forwards: np.ndarray,
+    u_axis: np.ndarray,
+    v_axis: np.ndarray,
+    frame_ids: list[int],
+    orbit_theta_deg: np.ndarray,
+    *,
+    reproj_errors: dict[int, float] | None = None,
+    reference_frame: int | None = None,
+    reference_method: str = "crosshair_orbit",
+) -> tuple[np.ndarray, dict]:
+    """Her kamera pozisyonu icin view_bank_az (-90..+90 hedef)."""
+    ref_frame = pick_reference_frame(
+        frame_ids,
+        orbit_theta_deg,
+        reproj_errors=reproj_errors,
+        positions=positions,
+        forwards=forwards,
+        anchor=anchor,
+        method=reference_method,
+        explicit=reference_frame,
+    )
+    ref_orbit = float(orbit_theta_deg[frame_ids.index(ref_frame)])
+    bank = np.array(
+        [
+            bank_azimuth_from_orbit(p, anchor, u_axis, v_axis, ref_orbit)
+            for p in positions
+        ],
+        dtype=np.float64,
+    )
+    meta = {
+        "reference_frame": int(ref_frame),
+        "reference_orbit_deg": ref_orbit,
+        "reference_method": reference_method,
+        "bank_az_min_deg": float(np.min(bank)),
+        "bank_az_max_deg": float(np.max(bank)),
+    }
+    return bank, meta
+
+
+def compute_center_ray_gaze(
+    anchor: np.ndarray,
+    cam_pos: np.ndarray,
+    forward: np.ndarray,
+) -> tuple[float, float]:
+    """Anchor'a bakis hatasi (deg) ve mesafe (m). Ekran merkezi = forward."""
+    to_a = anchor - cam_pos
+    dist = float(np.linalg.norm(to_a))
+    if dist < 1e-8:
+        return float("nan"), dist
+    err = float(
+        np.degrees(
+            np.arccos(
+                np.clip(float(np.dot(forward, to_a / dist)), -1.0, 1.0)
+            )
+        )
+    )
+    return err, dist
+
+
 def resolve_forward_local(
     positions: np.ndarray,
     forwards: np.ndarray,

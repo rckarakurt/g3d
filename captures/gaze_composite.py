@@ -349,12 +349,15 @@ def prepare_trajectory_rows(
         return np.asarray(vals, dtype=np.float64)
 
     if smooth_angles and smooth_window > 1:
-        vp = col("view_plane_deg")
+        angle_col = "view_bank_az_deg" if "view_bank_az_deg" in rows[0] else "view_plane_deg"
+        vp = col(angle_col)
         if np.any(np.isfinite(vp)):
             vp_smooth = smooth_series(np.nan_to_num(vp, nan=np.nanmedian(vp)), smooth_window)
             for i, r in enumerate(rows):
-                r["view_plane_deg_raw"] = r.get("view_plane_deg", "")
-                r["view_plane_deg"] = str(vp_smooth[i])
+                r[f"{angle_col}_raw"] = r.get(angle_col, "")
+                r[angle_col] = str(vp_smooth[i])
+                if angle_col == "view_bank_az_deg":
+                    r["view_plane_deg"] = str(vp_smooth[i])
 
     if smooth_distance and smooth_window > 1:
         dist = col("distance_m")
@@ -440,9 +443,14 @@ def composite_dataset(
 
     print(f"Angle match: {len(bank_az)} bank views, span {bank_az[0]:.0f}..{bank_az[-1]:.0f}")
     if traj_rows:
-        vp0 = float(traj_rows[0].get("view_plane_deg", 0))
-        vp1 = float(traj_rows[-1].get("view_plane_deg", 0))
-        print(f"Unity trajectory view_plane: {vp0:.1f} .. {vp1:.1f}  ({len(traj_rows)} frames)")
+        if "view_bank_az_deg" in traj_rows[0]:
+            vp0 = float(traj_rows[0].get("view_bank_az_deg", 0))
+            vp1 = float(traj_rows[-1].get("view_bank_az_deg", 0))
+            print(f"Unity trajectory view_bank_az: {vp0:.1f} .. {vp1:.1f}  ({len(traj_rows)} frames)")
+        else:
+            vp0 = float(traj_rows[0].get("view_plane_deg", 0))
+            vp1 = float(traj_rows[-1].get("view_plane_deg", 0))
+            print(f"Unity trajectory view_plane (legacy): {vp0:.1f} .. {vp1:.1f}  ({len(traj_rows)} frames)")
 
     manifest_rows: list[dict] = []
     rgba_cache: dict[float, np.ndarray] = {}
@@ -458,8 +466,11 @@ def composite_dataset(
             continue
 
         unity_rgb = cv2.cvtColor(cv2.imread(str(rgb_path)), cv2.COLOR_BGR2RGB)
-        view_plane_raw = float(row.get("view_plane_deg", float("nan")))
-        view_plane = unity_plane_to_bank_az(view_plane_raw)
+        if "view_bank_az_deg" in row and np.isfinite(float(row.get("view_bank_az_deg", float("nan")))):
+            view_plane = float(row["view_bank_az_deg"])
+        else:
+            view_plane_raw = float(row.get("view_plane_deg", float("nan")))
+            view_plane = unity_plane_to_bank_az(view_plane_raw)
 
         distance_m = float(row.get("distance_m", float("nan")))
         if global_scale and np.isfinite(global_distance_m):

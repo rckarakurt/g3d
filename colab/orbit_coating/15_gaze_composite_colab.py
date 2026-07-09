@@ -1,4 +1,4 @@
-# 15 — Aci eslestirmeli composite: Unity RGB + mesh (view_plane_deg)
+# 15 — Aci eslestirmeli composite: Unity RGB + mesh (view_bank_az_deg)
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ get_ipython().run_line_magic("pip", "install -q opencv-python-headless scipy")
 
 # ============ AYARLAR ============
 # Her Unity karesi icin:
-#   view_plane_deg (gaze_views.csv) -> view_bank'teki en yakin mesh acisi -> yapistir
+#   view_bank_az_deg (gaze_views.csv) -> view_bank'teki en yakin mesh acisi -> yapistir
 
 SCALE_BOOST = 8.0
 STRICT_ANGLE_MATCH = True   # True: kare bazli aci (yumusatma yok)
@@ -55,7 +55,7 @@ from colab_content_paths import (
     resolve_view_bank,
     sync_dataset_from_drive,
 )
-from export_gaze_views import export_gaze_views
+from unity_dataset_angles import ensure_geometric_gaze_views
 import importlib
 import gaze_composite as _gaze_composite
 
@@ -107,10 +107,7 @@ dataset = ensure_dataset_on_content()
 view_bank = resolve_view_bank()
 require_view_bank(view_bank)
 
-gaze_csv = dataset / "poses" / "gaze_views.csv"
-if not gaze_csv.exists():
-    print("gaze_views.csv uretiliyor...")
-    export_gaze_views(dataset, write_plot=False)
+ensure_geometric_gaze_views(dataset, write_plot=False)
 
 if GAZE_COMPOSITE_OUT.exists():
     shutil.rmtree(GAZE_COMPOSITE_OUT)

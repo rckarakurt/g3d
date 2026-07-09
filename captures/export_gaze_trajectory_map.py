@@ -71,7 +71,7 @@ def export_gaze_trajectory_map(
     dataset_dir: Path,
     *,
     out_path: Path | None = None,
-    angle_field: str = "view_plane_deg",
+    angle_field: str = "view_bank_az_deg",
     dpi: int = 180,
 ) -> Path:
     dataset_dir = dataset_dir.resolve()
@@ -234,8 +234,14 @@ def main() -> None:
     parser.add_argument(
         "--angle-field",
         type=str,
-        default="view_plane_deg",
-        choices=("view_plane_deg", "view_azimuth_deg", "view_elevation_deg"),
+        default="view_bank_az_deg",
+        choices=(
+            "view_bank_az_deg",
+            "view_bank_az_raw_deg",
+            "view_plane_deg",
+            "view_azimuth_deg",
+            "view_elevation_deg",
+        ),
     )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()

@@ -28,7 +28,7 @@ from colab_content_paths import (
     resolve_unity_dataset,
 )
 from export_gaze_trajectory_map import export_gaze_trajectory_map
-from export_gaze_views import export_gaze_views
+from unity_dataset_angles import ensure_geometric_gaze_views
 
 if MARKED_RGB:
     from export_gaze_rgb_marked import export_marked_rgb
@@ -74,22 +74,14 @@ def _show_colab_previews(dataset: Path) -> None:
         import pandas as pd
 
         df = pd.read_csv(csv_path)
+        cols = ["frame", "view_bank_az_deg", "view_elevation_deg", "is_gazing", "distance_m"]
+        if "view_bank_az_raw_deg" in df.columns:
+            cols.insert(2, "view_bank_az_raw_deg")
         print("gaze_views.csv (ilk 5 satir):")
-        display(
-            df[
-                [
-                    "frame",
-                    "view_plane_deg",
-                    "view_azimuth_deg",
-                    "view_elevation_deg",
-                    "is_gazing",
-                    "distance_m",
-                ]
-            ].head()
-        )
-        vp = df["view_plane_deg"].astype(float)
+        display(df[cols].head())
+        bank = df["view_bank_az_deg"].astype(float)
         print(
-            f"view_plane_deg: {vp.min():.1f} .. {vp.max():.1f}  "
+            f"view_bank_az_deg: {bank.min():.1f} .. {bank.max():.1f}  "
             f"(n={len(df)}, gazing={int(df['is_gazing'].sum())})"
         )
 
@@ -97,18 +89,19 @@ def _show_colab_previews(dataset: Path) -> None:
 dataset = resolve_unity_dataset()
 _require_dataset(dataset)
 
-print("\n1/3 Gaze anchor + acilar...")
-meta = export_gaze_views(dataset, write_plot=True)
+print("\n1/3 Gaze anchor + geometric bank acilari (view_bank_az_deg)...")
+meta = ensure_geometric_gaze_views(dataset, write_plot=True)
 print("  anchor:", meta["anchor_pos"])
-print("  orbit span:", meta.get("orbit_theta_span_deg"))
+print("  bank az span:", meta.get("bank_az_span_deg"))
+print("  angle method:", meta.get("angle_method", "geometric"))
 print("  gazing:", meta.get("gazing_frame_count"), "/", meta.get("frame_count"))
 
-print("\n2/3 Trajectory map (acili)...")
-map_path = export_gaze_trajectory_map(dataset)
+print("\n2/3 Trajectory map (view_bank_az_deg)...")
+map_path = export_gaze_trajectory_map(dataset, angle_field="view_bank_az_deg")
 print("  ->", map_path)
 
 if MARKED_RGB:
-    print("\n3/3 RGB overlay (crosshair + view_plane_deg)...")
+    print("\n3/3 RGB overlay (crosshair + view_bank_az_deg)...")
     out_rgb = dataset / "gaze_rgb" / "rgb"
     export_marked_rgb(dataset, out_rgb, gazing_only=False, clean=True)
     print("  ->", out_rgb)
