@@ -122,14 +122,8 @@ summary = export_paper_angle_composites(
 )
 print("\nTamamlandi.")
 print("  singles (7 PNG):", OUT_DIR / "singles")
-strip = summary.get("composites_strip_path") or OUT_DIR / summary["composites_strip"]
-print("  ECCV strip PNG:", strip)
-if summary.get("composites_strip_pdf"):
-    print("  ECCV strip PDF:", summary["composites_strip_pdf"])
-if summary.get("angle_pairs_latex"):
-    print("  LaTeX table:  ", summary["angle_pairs_latex"])
-print("  caption hint: ", summary.get("latex_caption_hint"))
-print("  manifest:     ", OUT_DIR / "paper_composites_manifest.json")
+print("  makale strip:   ", OUT_DIR / summary["composites_strip"])
+print("  manifest:       ", OUT_DIR / "paper_composites_manifest.json")
 
 drive_out = PLY_OUT_DRIVE.parent / "paper_angle_composites"
 copy_tree_if_requested(OUT_DIR, drive_out, enabled=COPY_TO_DRIVE)

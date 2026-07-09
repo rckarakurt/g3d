@@ -13,8 +13,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from eccv_figure import build_full_width_row, save_eccv_figure
-
 # Unity frame index -> Colab view-bank azimuth (degrees)
 PAPER_ANGLE_PAIRS: tuple[tuple[int, float], ...] = (
     (67, -45.0),
@@ -26,8 +24,8 @@ PAPER_ANGLE_PAIRS: tuple[tuple[int, float], ...] = (
     (143, 45.0),
 )
 
-# Endoscopic frames are slightly wider than tall in Unity export.
-ECCV_COMPOSITE_ASPECT = 0.75
+BG = (24, 24, 28)
+PAD = 8
 
 
 def _load_gaze_by_frame(dataset_dir: Path) -> dict[int, dict]:
@@ -67,6 +65,36 @@ def _resolve_polyp_path(bank_files: dict[float, Path], az_deg: float) -> Path:
     return bank_files[nearest]
 
 
+def _fit_rgb(img: np.ndarray, w: int, h: int) -> np.ndarray:
+    return cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+
+
+def _label_bar(width: int, lines: list[str], *, bar_h: int = 44) -> np.ndarray:
+    bar = np.zeros((bar_h, width, 3), dtype=np.uint8)
+    for i, line in enumerate(lines):
+        cv2.putText(
+            bar,
+            line,
+            (8, 18 + i * 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.48,
+            (235, 235, 240),
+            1,
+            cv2.LINE_AA,
+        )
+    return bar
+
+
+def _hstack_panels(panels: list[np.ndarray], gap: int = PAD) -> np.ndarray:
+    if not panels:
+        raise ValueError("No panels")
+    strip = panels[0]
+    for panel in panels[1:]:
+        g = np.full((strip.shape[0], gap, 3), BG[0], dtype=np.uint8)
+        strip = np.hstack([strip, g, panel])
+    return strip
+
+
 def export_paper_angle_composites(
     dataset_dir: Path,
     view_bank_dir: Path,
@@ -75,9 +103,10 @@ def export_paper_angle_composites(
     pairs: tuple[tuple[int, float], ...] = PAPER_ANGLE_PAIRS,
     scale_boost: float = 16.0,
     lab_match: bool = True,
-    strip_aspect: float = ECCV_COMPOSITE_ASPECT,
+    strip_cell_w: int = 340,
+    strip_cell_h: int = 255,
 ) -> dict:
-    """Paste textured polyp onto Unity mucosa center; save 7 overlays + ECCV strip."""
+    """Paste textured polyp onto Unity mucosa center; save 7 overlays + strip."""
     from gaze_composite import (
         estimate_target_diameter_px,
         load_camera,
@@ -109,9 +138,7 @@ def export_paper_angle_composites(
     global_distance_m = float(np.median(distances)) if distances else float("nan")
 
     results: list[dict] = []
-    strip_images: list[np.ndarray] = []
-    strip_labels: list[str] = []
-    strip_subtitles: list[str] = []
+    strip_panels: list[np.ndarray] = []
 
     for frame, bank_az in pairs:
         rgb_path = dataset_dir / "rgb" / f"{frame:06d}.png"
@@ -154,10 +181,17 @@ def export_paper_angle_composites(
         single_path = singles_dir / f"{stem}.png"
         cv2.imwrite(str(single_path), cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR))
 
-        panel_idx = len(strip_images)
-        strip_images.append(composite_rgb)
-        strip_labels.append(f"({chr(ord('a') + panel_idx)})")
-        strip_subtitles.append(f"{bank_az:+.0f}°")
+        strip_panels.append(
+            _vstack_label_composite(
+                composite_rgb,
+                strip_cell_w,
+                strip_cell_h,
+                lines=[
+                    f"{bank_az:+.0f} deg",
+                    f"image_{frame:04d}",
+                ],
+            )
+        )
 
         measured_bank = float(row.get("view_bank_az_deg", float("nan")))
         results.append(
@@ -179,15 +213,10 @@ def export_paper_angle_composites(
             f"-> {polyp_path.name}  (polyp mucosa ortasina bindirildi)"
         )
 
-    strip_rgb = build_full_width_row(
-        strip_images,
-        strip_labels,
-        aspect=strip_aspect,
-        subtitles=strip_subtitles,
-    )
-    figure_paths = save_eccv_figure(
-        strip_rgb,
-        out_dir / "paper_composites_strip_7.png",
+    composites_strip_path = out_dir / "paper_composites_strip_7.png"
+    cv2.imwrite(
+        str(composites_strip_path),
+        cv2.cvtColor(_hstack_panels(strip_panels), cv2.COLOR_RGB2BGR),
     )
 
     summary = {
@@ -196,15 +225,7 @@ def export_paper_angle_composites(
         "out_dir": str(out_dir),
         "pairs": [{"frame": f, "bank_az_deg": a} for f, a in pairs],
         "count": len(results),
-        "composites_strip": Path(figure_paths["png"]).name if figure_paths.get("png") else None,
-        "composites_strip_path": figure_paths.get("png"),
-        "composites_strip_pdf": figure_paths.get("pdf"),
-        "eccv_textwidth_mm": 122.0,
-        "latex_caption_hint": (
-            "\\caption{Trajectory-indexed composites at seven matched viewing angles. "
-            "Panels (a--g): $\\psi=-45^\\circ,\\ldots,+45^\\circ$. "
-            "Each image overlays the same textured lesion mesh on simulated mucosa.}"
-        ),
+        "composites_strip": str(composites_strip_path.name),
         "singles_dir": singles_dir.name,
         "description": "Polyp pasted on Unity mucosa center; no side-by-side Unity/polyp panels",
         "entries": results,
@@ -212,37 +233,14 @@ def export_paper_angle_composites(
     (out_dir / "paper_composites_manifest.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
-    latex_path = out_dir / "paper_angle_pairs_table.tex"
-    latex_path.write_text(
-        export_paper_pairs_latex_table(results),
-        encoding="utf-8",
-    )
-    summary["angle_pairs_latex"] = str(latex_path)
     return summary
 
 
-def export_paper_pairs_latex_table(
-    entries: list[dict],
-    *,
-    caption: str = "Unity frame to view-bank azimuth mapping.",
-) -> str:
-    """ECCV booktabs table for the seven fixed angle pairs."""
-    body = "\n".join(
-        f"    {e['image_name']} & {e['target_bank_az_deg']:+.0f}$^\\circ$ & "
-        f"{e['polyp_view_file']} \\\\"
-        for e in entries
-    )
-    return (
-        "\\begin{table}[t]\n"
-        "  \\centering\n"
-        f"  \\caption{{{caption}}}\n"
-        "  \\label{tab:paper-angle-pairs}\n"
-        "  \\begin{tabular}{lcl}\n"
-        "    \\toprule\n"
-        "    Unity frame & Bank az. & View-bank file \\\\\n"
-        "    \\midrule\n"
-        f"{body}\n"
-        "    \\bottomrule\n"
-        "  \\end{tabular}\n"
-        "\\end{table}\n"
-    )
+def _vstack_label_composite(
+    composite_rgb: np.ndarray,
+    cell_w: int,
+    cell_h: int,
+    lines: list[str],
+) -> np.ndarray:
+    thumb = _fit_rgb(composite_rgb, cell_w, cell_h)
+    return np.vstack([_label_bar(cell_w, lines), thumb])
